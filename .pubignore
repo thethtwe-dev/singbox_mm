@@ -1,0 +1,17 @@
+build/
+.dart_tool/
+.idea/
+.metadata
+*.iml
+
+logs*.txt
+
+test/
+tool/
+
+example/.dart_tool/
+example/.flutter-plugins-dependencies
+example/build/
+example/integration_test/
+example/test_driver/
+example/assets/singbox/

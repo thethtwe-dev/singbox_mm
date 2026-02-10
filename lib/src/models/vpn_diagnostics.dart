@@ -61,12 +61,12 @@ class VpnDiagnosticsReport {
       'generatedAt': generatedAt.toIso8601String(),
       'state': state.wireValue,
       'healthy': healthy,
-      'issues': issues.map((VpnDiagnosticIssue issue) => issue.toMap()).toList(
-        growable: false,
-      ),
-      'pingResults': pingResults.map((VpnPingResult item) => item.toMap()).toList(
-        growable: false,
-      ),
+      'issues': issues
+          .map((VpnDiagnosticIssue issue) => issue.toMap())
+          .toList(growable: false),
+      'pingResults': pingResults
+          .map((VpnPingResult item) => item.toMap())
+          .toList(growable: false),
       'stats': stats?.toMap(),
       'connectivityProbe': connectivityProbe?.toMap(),
     };

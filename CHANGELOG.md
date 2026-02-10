@@ -1,5 +1,13 @@
 ## 0.1.1
-- Linked with git project
+
+- Updated package links to the correct GitHub repository (`homepage`,
+  `repository`, `issue_tracker`, `documentation`).
+- Fixed pub.dev publish size-limit issue by excluding emulator JNI ABIs
+  (`x86`, `x86_64`) from published package contents.
+- Added/clarified release docs:
+  Android size/distribution notes, support section, and publish checklist.
+- Added complete MIT `LICENSE` text and third-party attribution file
+  (`THIRD_PARTY_NOTICES.md`).
 
 ## 0.1.0
 
@@ -32,3 +40,13 @@
 - Implemented iOS method/event bridge with explicit Network Extension requirement signaling.
 - Updated example app and tests for the new API.
 - Added Android ABI-aware asset extraction options for `sing-box` binary bootstrapping.
+- Added parser support for additional share-link formats and profiles:
+  `hysteria2`, `tuic`, `wireguard` (`wireguard://`, `wg://`, `wg-quick`),
+  and `ssh`.
+- Added encrypted `sbmm://` secure-link wrapper codec.
+- Added runtime capability guard helpers (including WireGuard checks for
+  newer core versions).
+- Added split-tunneling controls and richer detailed connection state snapshots.
+- Improved Android notification/status UX with live `Up/Down` speeds and
+  session duration display.
+- Improved Android service resilience for background/process restart scenarios.

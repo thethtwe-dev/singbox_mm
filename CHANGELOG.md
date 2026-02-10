@@ -1,3 +1,6 @@
+## 0.1.1
+- Linked with git project
+
 ## 0.1.0
 
 - Replaced template plugin with full `sign-box` focused VPN API.

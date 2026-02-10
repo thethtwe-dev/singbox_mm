@@ -10,9 +10,9 @@ Pod::Spec.new do |s|
 Flutter VPN plugin that exposes a typed sing-box runtime API, config builder,
 state events, and platform bridges for Android and iOS.
                        DESC
-  s.homepage         = 'https://github.com/mmcoder/singbox_mm'
+  s.homepage         = 'https://github.com/thethtwe-dev/singbox_mm'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'MMCoder' => 'dev@mmcoder.dev' }
+  s.author           = { 'ThetHtwe' => 'dev@thethtwe-dev.dev' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

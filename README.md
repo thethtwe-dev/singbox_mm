@@ -839,16 +839,6 @@ This plugin keeps the API consistent on iOS but returns `IOS_EXTENSION_REQUIRED`
 - Android runtime libbox (JNI) bridge.
 - iOS-compatible API surface with explicit extension requirement.
 
-## Pub.dev Release Checklist
-
-Run before publishing:
-
-```bash
-flutter analyze
-flutter test
-flutter pub publish --dry-run
-```
-
 ## Support
 
 Tron (TRC20): `TLbwVrZyaZujcTCXAb94t6k7BrvChVfxzi`

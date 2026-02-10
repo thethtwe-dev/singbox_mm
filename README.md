@@ -563,6 +563,12 @@ print('Active: ${result.appliedProfile?.tag}');
 
 Large release APK size is expected when shipping all native ABIs because each ABI includes its own `libbox.so`.
 
+For pub.dev distribution, this package includes mobile ABIs only:
+- `arm64-v8a`
+- `armeabi-v7a`
+
+Emulator ABIs (`x86`, `x86_64`) are excluded from the published tarball to stay under pub.dev extracted-size limits. If you need emulator ABI support, use a local/forked copy and include those JNI libs.
+
 Recommended distribution strategy:
 - Play Store: build `AAB` (`flutter build appbundle`) so users receive only their device ABI split.
 - Direct APK distribution: build per-ABI artifacts (`flutter build apk --release --split-per-abi`).

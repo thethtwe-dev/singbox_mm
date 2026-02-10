@@ -15,3 +15,7 @@ example/build/
 example/integration_test/
 example/test_driver/
 example/assets/singbox/
+
+# Keep pub.dev package under extracted-size limit by excluding emulator ABIs.
+android/src/main/jniLibs/x86/
+android/src/main/jniLibs/x86_64/

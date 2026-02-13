@@ -718,19 +718,6 @@ It enforces:
 - `flutter test`
 - direct dependency freshness (`flutter pub outdated`)
 
-## Pub.dev 160 Checklist
-
-Before publishing, run:
-
-```bash
-dart pub publish --dry-run
-```
-
-Recommended release checks:
-- keep git worktree clean before publish.
-- keep dartdoc coverage above pub threshold (at least 20% of public API).
-- verify `README.md`, `CHANGELOG.md`, and `LICENSE` are up to date for the release.
-
 ## Package Structure
 
 ```text

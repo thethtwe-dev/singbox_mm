@@ -62,6 +62,7 @@ _ParseOutput _parseTuicConfig(
       query,
       fallbackServerName: uri.host,
       defaultEnabled: true,
+      defaultAlpn: const <String>[],
     ),
     extra: extra,
   );

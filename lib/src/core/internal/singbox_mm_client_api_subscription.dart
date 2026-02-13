@@ -76,6 +76,7 @@ extension SignboxVpnSubscriptionApi on SignboxVpn {
     bool preferLowestLatency = true,
     Duration pingTimeout = const Duration(seconds: 3),
   }) async {
+    _activeGfwPresetMode = null;
     return _connectAutoSubscriptionInternal(
       this,
       rawSubscription: rawSubscription,

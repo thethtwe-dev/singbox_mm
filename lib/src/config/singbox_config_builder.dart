@@ -23,10 +23,18 @@ class SingboxConfigBuilder {
     String tunInterfaceName = 'sb-tun',
     String tunInet4Address = '172.19.0.1/30',
   }) {
+    final bool forceIpv4Only = _shouldForceIpv4Only(
+      profile: profile,
+      settings: settings,
+    );
+    final bool disableIpv6TunCapture = _shouldDisableIpv6TunCapture(
+      profile: profile,
+      settings: settings,
+    );
     final Map<String, Object?> proxyOutbound = profile.toOutboundJson(
       throttle: throttlePolicy,
     );
-    if (_shouldForceIpv4Only(profile)) {
+    if (forceIpv4Only) {
       proxyOutbound['domain_strategy'] = 'ipv4_only';
     }
     _applyTransportCompatibility(proxyOutbound, profile);
@@ -54,6 +62,7 @@ class SingboxConfigBuilder {
       throttlePolicy: throttlePolicy,
       tunInterfaceName: tunInterfaceName,
       tunInet4Address: tunInet4Address,
+      disableIpv6Capture: disableIpv6TunCapture,
     );
 
     final Map<String, Object?> dns = _dnsBuilder.build(
@@ -61,7 +70,7 @@ class SingboxConfigBuilder {
       bypassPolicy: bypassPolicy,
       throttlePolicy: throttlePolicy,
       settings: settings,
-      forceIpv4Only: _shouldForceIpv4Only(profile),
+      forceIpv4Only: forceIpv4Only,
     );
 
     final List<Object?> routeRules = _routeRulesBuilder.build(
@@ -143,10 +152,14 @@ class SingboxConfigBuilder {
     }
   }
 
-  bool _shouldForceIpv4Only(VpnProfile profile) {
+  bool _shouldForceIpv4Only({
+    required VpnProfile profile,
+    required SingboxFeatureSettings settings,
+  }) {
     switch (profile.protocol) {
       case VpnProtocol.hysteria2:
       case VpnProtocol.tuic:
+        return settings.route.ipv6RouteMode == SingboxIpv6RouteMode.disable;
       case VpnProtocol.wireguard:
         return false;
       case VpnProtocol.vless:
@@ -155,6 +168,27 @@ class SingboxConfigBuilder {
       case VpnProtocol.shadowsocks:
       case VpnProtocol.ssh:
         return profile.transport != VpnTransport.quic;
+    }
+  }
+
+  bool _shouldDisableIpv6TunCapture({
+    required VpnProfile profile,
+    required SingboxFeatureSettings settings,
+  }) {
+    if (settings.route.ipv6RouteMode != SingboxIpv6RouteMode.disable) {
+      return false;
+    }
+    switch (profile.protocol) {
+      case VpnProtocol.hysteria2:
+      case VpnProtocol.tuic:
+        return true;
+      case VpnProtocol.vless:
+      case VpnProtocol.vmess:
+      case VpnProtocol.trojan:
+      case VpnProtocol.shadowsocks:
+      case VpnProtocol.wireguard:
+      case VpnProtocol.ssh:
+        return false;
     }
   }
 
@@ -182,7 +216,21 @@ class SingboxConfigBuilder {
     }
 
     if (!supportsTls) {
-      outbound.remove('tls');
+      if (!_requiresNativeTls(outbound)) {
+        outbound.remove('tls');
+        return;
+      }
+
+      final Map<String, Object?> tls = _asObjectMap(outbound['tls']);
+      if (tls.isNotEmpty) {
+        // Keep mandatory TLS block for protocols like Hysteria2/TUIC, but strip
+        // tricks that are only valid for VLESS/VMess/Trojan.
+        tls.remove('mixed_sni_case');
+        tls.remove('padding');
+        tls.remove('fragment');
+        tls.remove('utls');
+        outbound['tls'] = tls;
+      }
       return;
     }
 
@@ -266,6 +314,11 @@ class SingboxConfigBuilder {
         type == 'vmess' ||
         type == 'trojan' ||
         type == 'anytls';
+  }
+
+  bool _requiresNativeTls(Map<String, Object?> outbound) {
+    final String type = (outbound['type'] as String?)?.toLowerCase() ?? '';
+    return type == 'hysteria2' || type == 'tuic';
   }
 
   void _applyWarp({

@@ -1,20 +1,30 @@
+/// SingboxServiceMode enum.
 enum SingboxServiceMode { vpn, proxyOnly }
 
+/// SingboxTunImplementation enum.
 enum SingboxTunImplementation { system, gvisor }
 
+/// SingboxIpv6RouteMode enum.
 enum SingboxIpv6RouteMode { disable, prefer, only }
 
+/// WarpDetourMode enum.
 enum WarpDetourMode { detourProxiesThroughWarp, routeAllThroughWarp }
 
+/// DnsProviderPreset enum.
 enum DnsProviderPreset { custom, cloudflare, google, quad9, adguard }
 
+/// DnsProviderProfile model.
 class DnsProviderProfile {
   const DnsProviderProfile({required this.remoteDns, required this.directDns});
 
+  /// Documented field.
   final String remoteDns;
+
+  /// Documented field.
   final String directDns;
 }
 
+/// Returns default remote/direct DNS values for a provider preset.
 DnsProviderProfile dnsProviderProfileForPreset(DnsProviderPreset preset) {
   switch (preset) {
     case DnsProviderPreset.custom:
@@ -45,18 +55,25 @@ DnsProviderProfile dnsProviderProfileForPreset(DnsProviderPreset preset) {
   }
 }
 
+/// IntRange model.
 class IntRange {
   const IntRange(this.min, this.max) : assert(min >= 0), assert(max >= min);
 
+  /// Documented field.
   final int min;
+
+  /// Documented field.
   final int max;
 
+  /// Compact range string in `min-max` format.
   String get compact => '$min-$max';
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{'min': min, 'max': max};
   }
 
+  /// Creates an instance from a dynamic map.
   factory IntRange.fromDynamic(dynamic raw, {required IntRange fallback}) {
     if (raw is Map<Object?, Object?>) {
       final int? min = _readInt(raw['min']);
@@ -82,6 +99,7 @@ class IntRange {
   }
 }
 
+/// AdvancedOptions model.
 class AdvancedOptions {
   const AdvancedOptions({
     this.memoryLimit = false,
@@ -89,10 +107,16 @@ class AdvancedOptions {
     this.logLevel,
   });
 
+  /// Documented field.
   final bool memoryLimit;
+
+  /// Documented field.
   final bool debugMode;
+
+  /// Documented field.
   final String? logLevel;
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'memoryLimit': memoryLimit,
@@ -101,6 +125,7 @@ class AdvancedOptions {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory AdvancedOptions.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const AdvancedOptions();
@@ -114,6 +139,7 @@ class AdvancedOptions {
   }
 }
 
+/// RouteOptions model.
 class RouteOptions {
   const RouteOptions({
     this.region = 'other',
@@ -126,15 +152,31 @@ class RouteOptions {
     this.extraBlockedKeywords = const <String>[],
   });
 
+  /// Documented field.
   final String region;
+
+  /// Documented field.
   final bool blockAdvertisements;
+
+  /// Documented field.
   final bool bypassLan;
+
+  /// Documented field.
   final bool resolveDestination;
+
+  /// Documented field.
   final SingboxIpv6RouteMode ipv6RouteMode;
+
+  /// Documented field.
   final List<String> regionDirectDomains;
+
+  /// Documented field.
   final List<String> regionDirectCidrs;
+
+  /// Documented field.
   final List<String> extraBlockedKeywords;
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'region': region,
@@ -148,6 +190,7 @@ class RouteOptions {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory RouteOptions.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const RouteOptions();
@@ -170,6 +213,7 @@ class RouteOptions {
   }
 }
 
+/// DnsOptions model.
 class DnsOptions {
   const DnsOptions({
     this.providerPreset = DnsProviderPreset.custom,
@@ -191,19 +235,43 @@ class DnsOptions {
     ],
   });
 
+  /// Documented field.
   final DnsProviderPreset providerPreset;
+
+  /// Documented field.
   final String remoteDns;
+
+  /// Documented field.
   final String remoteDomainStrategy;
+
+  /// Documented field.
   final String directDns;
+
+  /// Documented field.
   final String directDomainStrategy;
+
+  /// Documented field.
   final bool enableDnsRouting;
+
+  /// Documented field.
   final bool enableFakeIp;
+
+  /// Documented field.
   final String fakeIpInet4Range;
+
+  /// Documented field.
   final String fakeIpInet6Range;
+
+  /// Documented field.
   final bool enableDohFallback;
+
+  /// Documented field.
   final String dohFallbackDns;
+
+  /// Documented field.
   final List<String> dohFallbackDomainSuffixes;
 
+  /// Creates an instance from a dynamic map.
   factory DnsOptions.fromProvider({
     required DnsProviderPreset preset,
     String remoteDomainStrategy = 'auto',
@@ -240,6 +308,7 @@ class DnsOptions {
     );
   }
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'providerPreset': providerPreset.name,
@@ -257,6 +326,7 @@ class DnsOptions {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory DnsOptions.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const DnsOptions();
@@ -294,6 +364,7 @@ class DnsOptions {
   }
 }
 
+/// InboundOptions model.
 class InboundOptions {
   const InboundOptions({
     this.serviceMode = SingboxServiceMode.vpn,
@@ -315,17 +386,37 @@ class InboundOptions {
          localDnsPort == null || (localDnsPort > 0 && localDnsPort <= 65535),
        );
 
+  /// Documented field.
   final SingboxServiceMode serviceMode;
+
+  /// Documented field.
   final bool strictRoute;
+
+  /// Documented field.
   final SingboxTunImplementation tunImplementation;
+
+  /// Documented field.
   final int? mixedPort;
+
+  /// Documented field.
   final int? transparentProxyPort;
+
+  /// Documented field.
   final int? localDnsPort;
+
+  /// Documented field.
   final bool shareVpnInLocalNetwork;
+
+  /// Documented field.
   final bool? splitTunnelingEnabled;
+
+  /// Documented field.
   final List<String> includePackages;
+
+  /// Documented field.
   final List<String> excludePackages;
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'serviceMode': serviceMode.name,
@@ -341,6 +432,7 @@ class InboundOptions {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory InboundOptions.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const InboundOptions();
@@ -379,6 +471,7 @@ class InboundOptions {
   }
 }
 
+/// TlsTricksOptions model.
 class TlsTricksOptions {
   const TlsTricksOptions({
     this.enableTlsFragment = false,
@@ -390,14 +483,28 @@ class TlsTricksOptions {
     this.rawOutboundPatch = const <String, Object?>{},
   });
 
+  /// Documented field.
   final bool enableTlsFragment;
+
+  /// Documented field.
   final IntRange tlsFragmentSize;
+
+  /// Documented field.
   final IntRange tlsFragmentSleep;
+
+  /// Documented field.
   final bool enableTlsMixedSniCase;
+
+  /// Documented field.
   final bool enableTlsPadding;
+
+  /// Documented field.
   final IntRange tlsPadding;
+
+  /// Documented field.
   final Map<String, Object?> rawOutboundPatch;
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'enableTlsFragment': enableTlsFragment,
@@ -410,6 +517,7 @@ class TlsTricksOptions {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory TlsTricksOptions.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const TlsTricksOptions();
@@ -436,6 +544,7 @@ class TlsTricksOptions {
   }
 }
 
+/// WarpOptions model.
 class WarpOptions {
   const WarpOptions({
     this.enableWarp = false,
@@ -450,17 +559,37 @@ class WarpOptions {
     this.outboundTemplate = const <String, Object?>{},
   }) : assert(port >= 0 && port <= 65535);
 
+  /// Documented field.
   final bool enableWarp;
+
+  /// Documented field.
   final WarpDetourMode detourMode;
+
+  /// Documented field.
   final String? licenseKey;
+
+  /// Documented field.
   final String cleanIp;
+
+  /// Documented field.
   final int port;
+
+  /// Documented field.
   final IntRange noiseCount;
+
+  /// Documented field.
   final String noiseMode;
+
+  /// Documented field.
   final IntRange noiseSize;
+
+  /// Documented field.
   final IntRange noiseDelay;
+
+  /// Documented field.
   final Map<String, Object?> outboundTemplate;
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'enableWarp': enableWarp,
@@ -476,6 +605,7 @@ class WarpOptions {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory WarpOptions.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const WarpOptions();
@@ -509,6 +639,7 @@ class WarpOptions {
   }
 }
 
+/// MiscOptions model.
 class MiscOptions {
   const MiscOptions({
     this.connectionTestUrl = 'http://cp.cloudflare.com',
@@ -519,11 +650,19 @@ class MiscOptions {
          clashApiPort == null || (clashApiPort > 0 && clashApiPort <= 65535),
        );
 
+  /// Documented field.
   final String connectionTestUrl;
+
+  /// Documented field.
   final Duration urlTestInterval;
+
+  /// Documented field.
   final int? clashApiPort;
+
+  /// Documented field.
   final bool useXrayCoreWhenPossible;
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'connectionTestUrl': connectionTestUrl,
@@ -533,6 +672,7 @@ class MiscOptions {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory MiscOptions.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const MiscOptions();
@@ -552,6 +692,7 @@ class MiscOptions {
   }
 }
 
+/// SingboxFeatureSettings model.
 class SingboxFeatureSettings {
   const SingboxFeatureSettings({
     this.advanced = const AdvancedOptions(),
@@ -564,15 +705,31 @@ class SingboxFeatureSettings {
     this.rawConfigPatch = const <String, Object?>{},
   });
 
+  /// Documented field.
   final AdvancedOptions advanced;
+
+  /// Documented field.
   final RouteOptions route;
+
+  /// Documented field.
   final DnsOptions dns;
+
+  /// Documented field.
   final InboundOptions inbound;
+
+  /// Documented field.
   final TlsTricksOptions tlsTricks;
+
+  /// Documented field.
   final WarpOptions warp;
+
+  /// Documented field.
   final MiscOptions misc;
+
+  /// Documented field.
   final Map<String, Object?> rawConfigPatch;
 
+  /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'advanced': advanced.toMap(),
@@ -586,6 +743,7 @@ class SingboxFeatureSettings {
     };
   }
 
+  /// Creates an instance from a dynamic map.
   factory SingboxFeatureSettings.fromMap(dynamic raw) {
     if (raw is! Map<Object?, Object?>) {
       return const SingboxFeatureSettings();

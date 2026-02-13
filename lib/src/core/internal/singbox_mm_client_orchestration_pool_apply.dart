@@ -28,11 +28,15 @@ Future<Map<String, Object?>> _applyEndpointPoolInternal(
   client._endpointPoolOptions = options;
   client._endpointBypassPolicy = bypassPolicy;
   client._endpointThrottlePolicy = throttlePolicy;
+  final int initialMtuProbeCursor = _resolveInitialMtuProbeCursorInternal(
+    throttlePolicy,
+  );
   client._endpointMtuProbeCursorByTag
     ..clear()
     ..addEntries(
       supportedProfiles.map<MapEntry<String, int>>(
-        (VpnProfile profile) => MapEntry<String, int>(profile.tag, 0),
+        (VpnProfile profile) =>
+            MapEntry<String, int>(profile.tag, initialMtuProbeCursor),
       ),
     );
   client._endpointFeatureSettings = featureSettings ?? client._featureSettings;
@@ -54,6 +58,7 @@ Future<Map<String, Object?>> _applyEndpointPoolInternal(
     featureSettings: client._endpointFeatureSettings,
     clearEndpointPool: false,
   );
+  await _rememberEndpointForCurrentNetworkInternal(client, selected);
 
   _ensureManagedStateSubscriptionInternal(client);
   _restartHealthMonitorIfNeededInternal(client);

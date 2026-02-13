@@ -15,6 +15,7 @@ Future<void> _resetProfileInternal(
   client._standaloneProfile = null;
   client._featureSettings = const SingboxFeatureSettings();
   client._lastManagedState = VpnConnectionState.disconnected;
+  client._lastConnectedAt = null;
   _resetTrafficTrackingInternal(client);
 
   if (!stopVpn) {
@@ -38,4 +39,6 @@ void _clearEndpointPoolContextInternal(SignboxVpn client) {
   client._endpointBypassPolicy = const BypassPolicy();
   client._endpointThrottlePolicy = const TrafficThrottlePolicy();
   client._endpointFeatureSettings = const SingboxFeatureSettings();
+  client._activeGfwPresetMode = null;
+  client._lastConnectedAt = null;
 }

@@ -54,7 +54,7 @@ internal object VpnTunBuilderConfigurator {
         var dnsServer = runCatching {
             options.dnsServerAddress.value
         }.getOrNull()
-        if (privateDnsHost != null) {
+        if (dnsServer.isNullOrBlank() && privateDnsHost != null) {
             dnsServer = privateDnsBootstrapDnsServer
         }
         if (!dnsServer.isNullOrBlank()) {

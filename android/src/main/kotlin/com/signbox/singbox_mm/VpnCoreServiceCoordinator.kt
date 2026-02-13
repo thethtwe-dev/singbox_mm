@@ -24,6 +24,10 @@ internal class VpnCoreServiceCoordinator(
     private val stateDisconnected: String,
     private val stateError: String,
 ) {
+    private companion object {
+        const val RESTART_CLOSE_SUPPRESSION_MS: Long = 15_000L
+    }
+
     fun start(configPath: String?) {
         when (
             val result = VpnCoreStartFlow.execute(
@@ -79,8 +83,17 @@ internal class VpnCoreServiceCoordinator(
         }
     }
 
-    fun stop(emitDisconnected: Boolean) {
+    fun stop(
+        emitDisconnected: Boolean,
+        disconnectError: String? = null,
+    ) {
         liveNotificationTicker.stop()
+        if (!emitDisconnected) {
+            // Internal restart/reload closes the old service and may trigger
+            // postServiceClose callbacks. Suppress those so we don't stopSelf
+            // while a replacement core is starting.
+            runtimeSession.suppressPostServiceCloseFor(RESTART_CLOSE_SUPPRESSION_MS)
+        }
 
         VpnCoreStopFlow.execute(
             request = VpnCoreStopRequest(
@@ -99,7 +112,7 @@ internal class VpnCoreServiceCoordinator(
 
         if (emitDisconnected) {
             runtimeSession.clearProfileAndConfig()
-            runtimeStateBridge.publish(stateDisconnected, null)
+            runtimeStateBridge.publish(stateDisconnected, disconnectError)
         }
     }
 }

@@ -3,8 +3,9 @@ part of '../singbox_mm_client.dart';
 Future<(bool hasPositiveSignal, bool shouldCountFailure)>
 _runEndpointSignalChecksInternal(
   SignboxVpn client,
-  VpnHealthCheckOptions options,
-) async {
+  VpnHealthCheckOptions options, {
+  required bool allowFailureCounting,
+}) async {
   bool hasPositiveHealthSignal = false;
   bool shouldCountFailure = false;
 
@@ -21,6 +22,7 @@ _runEndpointSignalChecksInternal(
         timeout: options.pingTimeout,
         connectivityProbeUrl: options.connectivityProbeUrl,
         connectivityProbeTimeout: options.connectivityProbeTimeout,
+        allowConnectivityProbeFallback: !options.connectivityProbeEnabled,
       );
     }());
   }
@@ -61,11 +63,13 @@ _runEndpointSignalChecksInternal(
     }
   }
 
-  if (pingFailed && options.failoverOnPingFailure && !probeSucceeded) {
-    shouldCountFailure = true;
-  }
-  if (probeFailed && options.failoverOnConnectivityFailure) {
-    shouldCountFailure = true;
+  if (allowFailureCounting) {
+    if (pingFailed && options.failoverOnPingFailure && !probeSucceeded) {
+      shouldCountFailure = true;
+    }
+    if (probeFailed && options.failoverOnConnectivityFailure) {
+      shouldCountFailure = true;
+    }
   }
 
   if (hasPositiveHealthSignal) {

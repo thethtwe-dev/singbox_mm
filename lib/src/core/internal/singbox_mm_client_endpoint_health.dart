@@ -5,7 +5,9 @@ TrafficThrottlePolicy _effectiveThrottlePolicyForProfileInternal(
   required VpnProfile profile,
   required TrafficThrottlePolicy base,
 }) {
-  final bool enforceUdpFragment = profile.tls.enabled;
+  final bool enforceUdpFragment = _shouldForceUdpFragmentForProfileInternal(
+    profile,
+  );
   final List<int> mtuCandidates = _resolveMtuCandidatesInternal(base);
   if (!profile.tls.enabled ||
       !base.enableAutoMtuProbe ||
@@ -16,9 +18,13 @@ TrafficThrottlePolicy _effectiveThrottlePolicyForProfileInternal(
     return base;
   }
 
-  final int cursor = client._endpointMtuProbeCursorByTag[profile.tag] ?? 0;
+  final int configuredMtuIndex = max(0, mtuCandidates.indexOf(base.tunMtu));
+  final int cursor =
+      client._endpointMtuProbeCursorByTag[profile.tag] ?? configuredMtuIndex;
   final int safeIndex = max(0, min(cursor, mtuCandidates.length - 1));
-  return base.copyWith(tunMtu: mtuCandidates[safeIndex], udpFragment: true);
+  final int tunedMtu = mtuCandidates[safeIndex];
+  final bool tunedUdpFragment = enforceUdpFragment ? true : base.udpFragment;
+  return base.copyWith(tunMtu: tunedMtu, udpFragment: tunedUdpFragment);
 }
 
 List<int> _resolveMtuCandidatesInternal(TrafficThrottlePolicy policy) {
@@ -27,6 +33,32 @@ List<int> _resolveMtuCandidatesInternal(TrafficThrottlePolicy policy) {
   final List<int> sorted = values.toList(growable: false)
     ..sort((int a, int b) => b.compareTo(a));
   return sorted;
+}
+
+int _resolveInitialMtuProbeCursorInternal(TrafficThrottlePolicy policy) {
+  final List<int> candidates = _resolveMtuCandidatesInternal(policy);
+  if (candidates.isEmpty) {
+    return 0;
+  }
+  return max(0, candidates.indexOf(policy.tunMtu));
+}
+
+bool _shouldForceUdpFragmentForProfileInternal(VpnProfile profile) {
+  if (!profile.tls.enabled) {
+    return false;
+  }
+  switch (profile.protocol) {
+    case VpnProtocol.vless:
+    case VpnProtocol.vmess:
+    case VpnProtocol.trojan:
+      return true;
+    case VpnProtocol.shadowsocks:
+    case VpnProtocol.hysteria2:
+    case VpnProtocol.tuic:
+    case VpnProtocol.wireguard:
+    case VpnProtocol.ssh:
+      return false;
+  }
 }
 
 void _markEndpointSuccessInternal(SignboxVpn client, int index) {

@@ -1,3 +1,7 @@
+// Public API export for the `singbox_mm` package.
+// Import this library from applications:
+// `import 'package:singbox_mm/singbox_mm.dart';`
+
 export 'src/config/singbox_config_builder.dart';
 export 'src/config/singbox_config_document.dart';
 export 'src/config/sbmm_secure_link_codec.dart';

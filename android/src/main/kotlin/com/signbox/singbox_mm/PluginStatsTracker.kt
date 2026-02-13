@@ -90,17 +90,32 @@ internal class PluginStatsTracker(
     ): Map<String, Any?> {
         val currentTx = readUidTxBytes().coerceAtLeast(0L)
         val currentRx = readUidRxBytes().coerceAtLeast(0L)
-        val totalUploaded = (currentTx - uplinkBytesBase).coerceAtLeast(0L)
-        val totalDownloaded = (currentRx - downlinkBytesBase).coerceAtLeast(0L)
         val isConnected = connectionState == connectedState
 
         if (!isConnected) {
+            val totalUploaded = 0L
+            val totalDownloaded = 0L
             lastUploadSpeedBytesPerSecond = 0L
             lastDownloadSpeedBytesPerSecond = 0L
             lastStatsSampleAtMillis = nowMillis
             lastStatsUploadedBytes = totalUploaded
             lastStatsDownloadedBytes = totalDownloaded
-        } else if (lastStatsSampleAtMillis <= 0L) {
+            return mapOf(
+                "totalUploaded" to totalUploaded,
+                "totalDownloaded" to totalDownloaded,
+                "uploadSpeed" to 0L,
+                "downloadSpeed" to 0L,
+                "uplinkBytes" to totalUploaded,
+                "downlinkBytes" to totalDownloaded,
+                "activeConnections" to 0,
+                "connectedAt" to null,
+                "updatedAt" to nowMillis,
+            )
+        }
+
+        val totalUploaded = (currentTx - uplinkBytesBase).coerceAtLeast(0L)
+        val totalDownloaded = (currentRx - downlinkBytesBase).coerceAtLeast(0L)
+        if (lastStatsSampleAtMillis <= 0L) {
             resetSampling(totalUploaded, totalDownloaded, nowMillis = nowMillis)
         } else {
             val elapsedMs = (nowMillis - lastStatsSampleAtMillis).coerceAtLeast(0L)

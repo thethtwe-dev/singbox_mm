@@ -4,8 +4,12 @@ Future<void> _evaluateNoTrafficHealthInternal(
   SignboxVpn client,
   VpnHealthCheckOptions options, {
   required bool hasPositiveHealthSignal,
+  required bool allowFailureCounting,
 }) async {
   if (!options.failoverOnNoTraffic) {
+    return;
+  }
+  if (!allowFailureCounting) {
     return;
   }
   // If the tunnel is reachable (ping or probe passed), treat no traffic as

@@ -1,6 +1,8 @@
 package com.signbox.singbox_mm
 
 import android.util.Log
+import java.net.Inet6Address
+import java.net.InetAddress
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -39,7 +41,8 @@ internal object VpnPrivateDnsCompatibilityPatcher {
                 dns.put("rules", it)
             }
             if (!containsDnsRuleForHost(dnsRules, privateDnsHost)) {
-                dnsRules.put(
+                prependObject(
+                    dnsRules,
                     JSONObject()
                         .put("domain_suffix", JSONArray().put(privateDnsHost))
                         .put("server", PRIVATE_DNS_BOOTSTRAP_TAG),
@@ -52,6 +55,7 @@ internal object VpnPrivateDnsCompatibilityPatcher {
             val routeRules = route.optJSONArray("rules") ?: JSONArray().also {
                 route.put("rules", it)
             }
+            removeGlobalDnsOutRule(routeRules, 853, "tcp")
             if (!containsGlobalDnsOutRule(routeRules, 53, "udp")) {
                 routeRules.put(
                     JSONObject()
@@ -64,14 +68,6 @@ internal object VpnPrivateDnsCompatibilityPatcher {
                 routeRules.put(
                     JSONObject()
                         .put("port", 53)
-                        .put("network", "tcp")
-                        .put("outbound", DNS_OUTBOUND_TAG),
-                )
-            }
-            if (!containsGlobalDnsOutRule(routeRules, 853, "tcp")) {
-                routeRules.put(
-                    JSONObject()
-                        .put("port", 853)
                         .put("network", "tcp")
                         .put("outbound", DNS_OUTBOUND_TAG),
                 )
@@ -93,14 +89,35 @@ internal object VpnPrivateDnsCompatibilityPatcher {
                 )
             }
             if (!containsDirectRouteRuleForHost(routeRules, privateDnsHost)) {
-                routeRules.put(
+                prependObject(
+                    routeRules,
                     JSONObject()
                         .put("domain_suffix", JSONArray().put(privateDnsHost))
+                        .put("port", 853)
+                        .put("network", "tcp")
+                        .put("outbound", DIRECT_OUTBOUND_TAG),
+                )
+            }
+            val privateDnsCidrs = resolveHostCidrs(privateDnsHost)
+            for (cidr in privateDnsCidrs) {
+                if (containsDirectRouteRuleForIp(routeRules, cidr, 853)) {
+                    continue
+                }
+                prependObject(
+                    routeRules,
+                    JSONObject()
+                        .put("ip_cidr", JSONArray().put(cidr))
+                        .put("port", 853)
+                        .put("network", "tcp")
                         .put("outbound", DIRECT_OUTBOUND_TAG),
                 )
             }
 
-            Log.i(logTag, "Applied strict Private DNS compatibility for host=$privateDnsHost")
+            Log.i(
+                logTag,
+                "Applied strict Private DNS compatibility for host=$privateDnsHost " +
+                    "(resolvedAddresses=${privateDnsCidrs.size})",
+            )
             root.toString()
         }.getOrElse { error ->
             Log.w(
@@ -177,6 +194,46 @@ internal object VpnPrivateDnsCompatibilityPatcher {
         return false
     }
 
+    private fun removeGlobalDnsOutRule(
+        rules: JSONArray,
+        port: Int,
+        network: String,
+    ) {
+        val retained = ArrayList<Any?>(rules.length())
+        for (index in 0 until rules.length()) {
+            val item = rules.optJSONObject(index)
+            if (item == null) {
+                retained.add(rules.opt(index))
+                continue
+            }
+
+            if (!item.optString("outbound").equals(DNS_OUTBOUND_TAG, ignoreCase = true)) {
+                retained.add(item)
+                continue
+            }
+            if (item.optInt("port", -1) != port) {
+                retained.add(item)
+                continue
+            }
+            val configuredNetwork = item.optString("network").trim().lowercase()
+            if (configuredNetwork.isNotBlank() && configuredNetwork != network) {
+                retained.add(item)
+                continue
+            }
+            val cidr = item.optJSONArray("ip_cidr")
+            if (cidr != null && cidr.length() > 0) {
+                retained.add(item)
+            }
+        }
+
+        while (rules.length() > 0) {
+            rules.remove(0)
+        }
+        for (item in retained) {
+            rules.put(item)
+        }
+    }
+
     private fun containsDirectRouteRuleForHost(rules: JSONArray, host: String): Boolean {
         for (index in 0 until rules.length()) {
             val item = rules.optJSONObject(index) ?: continue
@@ -193,6 +250,50 @@ internal object VpnPrivateDnsCompatibilityPatcher {
         return false
     }
 
+    private fun containsDirectRouteRuleForIp(
+        rules: JSONArray,
+        cidr: String,
+        port: Int,
+    ): Boolean {
+        for (index in 0 until rules.length()) {
+            val item = rules.optJSONObject(index) ?: continue
+            if (!item.optString("outbound").equals(DIRECT_OUTBOUND_TAG, ignoreCase = true)) {
+                continue
+            }
+            if (item.optInt("port", -1) != port) {
+                continue
+            }
+            if (jsonArrayContainsHost(item.optJSONArray("ip_cidr"), cidr)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun resolveHostCidrs(host: String): List<String> {
+        return runCatching {
+            InetAddress.getAllByName(host)
+                .mapNotNull { address ->
+                    val hostAddress = address.hostAddress ?: return@mapNotNull null
+                    val normalized = normalizeIp(hostAddress)
+                    if (address is Inet6Address) {
+                        "$normalized/128"
+                    } else {
+                        "$normalized/32"
+                    }
+                }
+                .distinct()
+        }.getOrElse { emptyList() }
+    }
+
+    private fun normalizeIp(value: String): String {
+        val zoneSeparator = value.indexOf('%')
+        if (zoneSeparator > 0) {
+            return value.substring(0, zoneSeparator)
+        }
+        return value
+    }
+
     private fun jsonArrayContainsHost(values: JSONArray?, host: String): Boolean {
         if (values == null) {
             return false
@@ -204,5 +305,19 @@ internal object VpnPrivateDnsCompatibilityPatcher {
             }
         }
         return false
+    }
+
+    private fun prependObject(
+        array: JSONArray,
+        value: JSONObject,
+    ) {
+        val snapshot = ArrayList<Any?>(array.length())
+        for (index in 0 until array.length()) {
+            snapshot.add(array.opt(index))
+        }
+        array.put(0, value)
+        for (index in snapshot.indices) {
+            array.put(index + 1, snapshot[index])
+        }
     }
 }

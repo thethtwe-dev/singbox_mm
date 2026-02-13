@@ -18,8 +18,8 @@ Future<void> _handleManagedStateChangeInternal(
   final VpnConnectionState previous = client._lastManagedState;
   client._lastManagedState = state;
 
-  if (client._endpointPool.isEmpty ||
-      !client._endpointPoolOptions.autoFailover) {
+  if (!client._endpointPoolOptions.autoFailover ||
+      client._endpointPool.isEmpty) {
     return;
   }
   if (client._manualStopRequested || client._failoverInProgress) {
@@ -28,6 +28,7 @@ Future<void> _handleManagedStateChangeInternal(
 
   switch (state) {
     case VpnConnectionState.connected:
+      client._lastConnectedAt = DateTime.now().toUtc();
       _markEndpointSuccessInternal(client, client._activeEndpointIndex);
       _resetTrafficTrackingInternal(client);
       return;
@@ -38,6 +39,18 @@ Future<void> _handleManagedStateChangeInternal(
       }
       return;
     case VpnConnectionState.disconnected:
+      client._lastConnectedAt = null;
+      // Native notification stop emits a marker error so managed mode can
+      // suppress auto-failover reconnect and remain explicitly stopped.
+      try {
+        final VpnConnectionSnapshot snapshot = await client.getStateDetails();
+        if (snapshot.lastError == SignboxVpn._stoppedByUserErrorMarker) {
+          client._manualStopRequested = true;
+          return;
+        }
+      } on Object {
+        // Ignore state detail read failures and continue with failover logic.
+      }
       if (previous == VpnConnectionState.connected &&
           client._endpointPoolOptions.healthCheck.failoverOnDisconnect) {
         _markEndpointFailureInternal(client, client._activeEndpointIndex);

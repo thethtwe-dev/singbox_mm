@@ -1,4 +1,6 @@
+/// Runtime traffic and connection counters emitted by the VPN core.
 class VpnRuntimeStats {
+  /// Creates a runtime stats snapshot.
   const VpnRuntimeStats({
     int? totalUploaded,
     int? totalDownloaded,
@@ -16,22 +18,39 @@ class VpnRuntimeStats {
        uploadSpeed = uploadSpeed ?? uplinkSpeed ?? 0,
        downloadSpeed = downloadSpeed ?? downlinkSpeed ?? 0;
 
+  /// Total uploaded bytes since the current session started.
   final int totalUploaded;
+
+  /// Total downloaded bytes since the current session started.
   final int totalDownloaded;
+
+  /// Current upload speed in bytes per second.
   final int uploadSpeed;
+
+  /// Current download speed in bytes per second.
   final int downloadSpeed;
+
+  /// Number of active tracked connections.
   final int activeConnections;
+
+  /// Timestamp of this snapshot.
   final DateTime updatedAt;
+
+  /// Session start timestamp when connected, otherwise `null`.
   final DateTime? connectedAt;
 
   @Deprecated('Use totalUploaded instead.')
+  /// Deprecated alias for [totalUploaded].
   int get uplinkBytes => totalUploaded;
 
   @Deprecated('Use totalDownloaded instead.')
+  /// Deprecated alias for [totalDownloaded].
   int get downlinkBytes => totalDownloaded;
 
+  /// Combined total bytes transferred.
   int get totalBytes => totalUploaded + totalDownloaded;
 
+  /// Session duration since [connectedAt], or `null` when disconnected.
   Duration? get connectionDuration {
     final DateTime? startedAt = connectedAt;
     if (startedAt == null) {
@@ -45,22 +64,30 @@ class VpnRuntimeStats {
   }
 
   @Deprecated('Use formattedTotalUploaded instead.')
+  /// Deprecated alias for [formattedTotalUploaded].
   String get formattedUplink => formattedTotalUploaded;
 
   @Deprecated('Use formattedTotalDownloaded instead.')
+  /// Deprecated alias for [formattedTotalDownloaded].
   String get formattedDownlink => formattedTotalDownloaded;
 
   @Deprecated('Use formattedTotalUploaded + formattedTotalDownloaded instead.')
+  /// Deprecated alias for combined formatted totals.
   String get formattedTotal => formatBytes(totalBytes);
 
+  /// Human-readable uploaded total (for example `12.42 MB`).
   String get formattedTotalUploaded => formatBytes(totalUploaded);
 
+  /// Human-readable downloaded total (for example `325.10 MB`).
   String get formattedTotalDownloaded => formatBytes(totalDownloaded);
 
+  /// Human-readable upload speed (for example `42.00 KB/s`).
   String get formattedUploadSpeed => '${formatBytes(uploadSpeed)}/s';
 
+  /// Human-readable download speed (for example `1.20 MB/s`).
   String get formattedDownloadSpeed => '${formatBytes(downloadSpeed)}/s';
 
+  /// Human-readable connection duration (`dd hh:mm:ss` or `hh:mm:ss`).
   String get formattedDuration {
     final Duration? duration = connectionDuration;
     if (duration == null) {
@@ -69,6 +96,7 @@ class VpnRuntimeStats {
     return formatDuration(duration);
   }
 
+  /// Returns a zero-value disconnected snapshot.
   factory VpnRuntimeStats.empty() {
     return VpnRuntimeStats(
       totalUploaded: 0,
@@ -80,6 +108,7 @@ class VpnRuntimeStats {
     );
   }
 
+  /// Builds runtime stats from a method-channel payload map.
   factory VpnRuntimeStats.fromMap(Map<Object?, Object?> raw) {
     final bool hasTotalUploaded = raw.containsKey('totalUploaded');
     final bool hasTotalDownloaded = raw.containsKey('totalDownloaded');
@@ -100,6 +129,7 @@ class VpnRuntimeStats {
     );
   }
 
+  /// Serializes this snapshot to a map payload.
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'totalUploaded': totalUploaded,
@@ -114,6 +144,7 @@ class VpnRuntimeStats {
     };
   }
 
+  /// Converts raw byte count to a unit-formatted string.
   static String formatBytes(int bytes, {int fractionDigits = 2}) {
     final List<String> units = <String>['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
     double value = bytes < 0 ? 0 : bytes.toDouble();
@@ -129,6 +160,7 @@ class VpnRuntimeStats {
     return '${value.toStringAsFixed(fractionDigits)} ${units[unitIndex]}';
   }
 
+  /// Formats a duration into `hh:mm:ss` (or `Xd hh:mm:ss`).
   static String formatDuration(Duration duration) {
     final int totalSeconds = duration.inSeconds < 0 ? 0 : duration.inSeconds;
     final int days = totalSeconds ~/ 86400;

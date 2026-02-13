@@ -370,6 +370,14 @@ The package now includes a ready-to-use hardened preset pack:
 - `GfwPresetMode.aggressive`
 - `GfwPresetMode.extreme`
 
+`GfwPresetMode.extreme` is intentionally strict and only allows:
+- `vless` with Reality (`security=reality` / Reality public key)
+- `hysteria2`
+- `tuic`
+
+When a profile is incompatible with `extreme`, preset connect APIs reject it
+with `SignboxVpnException(code: 'EXTREME_PRESET_PROTOCOL_BLOCKED')`.
+
 ```dart
 final preset = GfwPresetPack.balanced();
 
@@ -710,6 +718,19 @@ It enforces:
 - `flutter test`
 - direct dependency freshness (`flutter pub outdated`)
 
+## Pub.dev 160 Checklist
+
+Before publishing, run:
+
+```bash
+dart pub publish --dry-run
+```
+
+Recommended release checks:
+- keep git worktree clean before publish.
+- keep dartdoc coverage above pub threshold (at least 20% of public API).
+- verify `README.md`, `CHANGELOG.md`, and `LICENSE` are up to date for the release.
+
 ## Package Structure
 
 ```text
@@ -770,6 +791,10 @@ android/src/main/kotlin/com/signbox/singbox_mm/
 ## Performance Notes
 
 - Keep `statsEmitIntervalMs` at `1000-2000` for UI updates without extra battery use.
+- Endpoint-pool ping checks are parallelized (bounded worker pool) for faster
+  large-subscription health scans.
+- Android stats stream now de-duplicates unchanged payloads and emits periodic
+  heartbeat updates to reduce channel overhead while keeping UI live.
 - Default TUN stack is `gvisor` for better app compatibility on restrictive networks/devices.
 - If your target devices are stable with `system`, switching to `system` can reduce overhead.
 - Prefer `balanced` preset for long sessions; `aggressive/extreme` increase CPU/battery.

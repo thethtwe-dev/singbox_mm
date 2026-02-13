@@ -28,12 +28,20 @@ _ParseOutput _parseHysteria2Config(
   }
 
   final Map<String, Object?> extra = <String, Object?>{};
-  _putString(extra, query, 'obfs', const <String>['obfs']);
-  _putString(extra, query, 'obfs_password', const <String>[
-    'obfs_password',
-    'obfs-password',
-    'obfspassword',
+  final String? obfsType = VpnConfigParser._firstValue(query, const <String>[
+    'obfs',
   ]);
+  final String? obfsPassword = VpnConfigParser._firstValue(
+    query,
+    const <String>['obfs_password', 'obfs-password', 'obfspassword'],
+  );
+  if (obfsType != null && obfsType.isNotEmpty) {
+    extra['obfs'] = <String, Object?>{
+      'type': obfsType,
+      if (obfsPassword != null && obfsPassword.isNotEmpty)
+        'password': obfsPassword,
+    };
+  }
   _putInt(extra, query, 'up_mbps', const <String>['upmbps', 'up_mbps', 'up']);
   _putInt(extra, query, 'down_mbps', const <String>[
     'downmbps',
@@ -50,6 +58,7 @@ _ParseOutput _parseHysteria2Config(
       query,
       fallbackServerName: uri.host,
       defaultEnabled: true,
+      defaultAlpn: const <String>[],
     ),
     extra: extra,
   );

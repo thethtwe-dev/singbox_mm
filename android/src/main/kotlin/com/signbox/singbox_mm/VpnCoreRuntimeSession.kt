@@ -23,6 +23,9 @@ internal class VpnCoreRuntimeSession {
     @Volatile
     var coreNotificationDetail: String? = null
 
+    @Volatile
+    private var suppressPostServiceCloseUntilEpochMs: Long = 0L
+
     fun bindPreparedProfile(profileLabel: String) {
         this.profileLabel = profileLabel
     }
@@ -44,5 +47,17 @@ internal class VpnCoreRuntimeSession {
     fun clearProfileAndConfig() {
         profileLabel = null
         configPath = null
+    }
+
+    fun suppressPostServiceCloseFor(durationMs: Long) {
+        if (durationMs <= 0L) {
+            return
+        }
+        suppressPostServiceCloseUntilEpochMs =
+            System.currentTimeMillis() + durationMs
+    }
+
+    fun shouldIgnorePostServiceClose(): Boolean {
+        return System.currentTimeMillis() < suppressPostServiceCloseUntilEpochMs
     }
 }

@@ -19,6 +19,7 @@ class _ManagedFakePlatform
   int restartCalls = 0;
   bool started = false;
   bool pingShouldFail = false;
+  String? lastError;
   int txBytes = 0;
   int rxBytes = 0;
 
@@ -38,7 +39,8 @@ class _ManagedFakePlatform
   Stream<VpnRuntimeStats> get statsStream =>
       const Stream<VpnRuntimeStats>.empty();
 
-  void emit(VpnConnectionState state) {
+  void emit(VpnConnectionState state, {String? error}) {
+    lastError = error;
     _controller.add(state);
   }
 
@@ -60,6 +62,7 @@ class _ManagedFakePlatform
   Future<void> startVpn() async {
     startCalls++;
     started = true;
+    lastError = null;
     emit(VpnConnectionState.connected);
   }
 
@@ -67,6 +70,7 @@ class _ManagedFakePlatform
   Future<void> stopVpn() async {
     stopCalls++;
     started = false;
+    lastError = null;
     emit(VpnConnectionState.disconnected);
   }
 
@@ -74,6 +78,7 @@ class _ManagedFakePlatform
   Future<void> restartVpn() async {
     restartCalls++;
     started = true;
+    lastError = null;
     emit(VpnConnectionState.connected);
   }
 
@@ -91,6 +96,7 @@ class _ManagedFakePlatform
           ? VpnConnectionState.connected
           : VpnConnectionState.disconnected,
       timestamp: DateTime.now().toUtc(),
+      lastError: lastError,
     );
   }
 
@@ -108,7 +114,7 @@ class _ManagedFakePlatform
   Future<void> syncRuntimeState() async {}
 
   @override
-  Future<String?> getLastError() async => null;
+  Future<String?> getLastError() async => lastError;
 
   @override
   Future<String?> getSingboxVersion() async => 'sing-box test';
@@ -186,6 +192,99 @@ void main() {
     await fakePlatform.dispose();
   });
 
+  test('disconnected with user-stop marker does not auto-reconnect', () async {
+    final _ManagedFakePlatform fakePlatform = _ManagedFakePlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+    await vpn.applyEndpointPool(
+      profiles: <VpnProfile>[
+        VpnProfile.vless(
+          tag: 'edge-a',
+          server: 'a.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555555',
+          tls: const TlsOptions(enabled: false),
+        ),
+        VpnProfile.vless(
+          tag: 'edge-b',
+          server: 'b.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555556',
+          tls: const TlsOptions(enabled: false),
+        ),
+      ],
+      options: const EndpointPoolOptions(
+        autoFailover: true,
+        healthCheck: VpnHealthCheckOptions(failoverOnNoTraffic: false),
+      ),
+    );
+
+    await vpn.startManaged();
+    expect(fakePlatform.startCalls, 1);
+
+    fakePlatform.started = false;
+    fakePlatform.emit(
+      VpnConnectionState.disconnected,
+      error: 'STOPPED_BY_USER',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 140));
+
+    expect(vpn.activeEndpointProfile?.tag, 'edge-a');
+    expect(fakePlatform.restartCalls, 0);
+    expect(fakePlatform.startCalls, 1);
+
+    await vpn.dispose();
+    await fakePlatform.dispose();
+  });
+
+  test(
+    'single-endpoint managed mode attempts in-place recovery on error',
+    () async {
+      final _ManagedFakePlatform fakePlatform = _ManagedFakePlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+      await vpn.applyEndpointPool(
+        profiles: <VpnProfile>[
+          VpnProfile.hysteria2(
+            tag: 'hy2-only',
+            server: '54.251.185.72',
+            serverPort: 24312,
+            password: 'hy2-pass',
+            tls: const TlsOptions(
+              enabled: true,
+              serverName: '54.251.185.72',
+              allowInsecure: true,
+            ),
+          ),
+        ],
+        options: const EndpointPoolOptions(
+          autoFailover: true,
+          healthCheck: VpnHealthCheckOptions(
+            checkInterval: Duration(milliseconds: 40),
+            maxConsecutiveFailures: 1,
+            failoverOnNoTraffic: true,
+            failoverOnError: true,
+          ),
+        ),
+      );
+
+      await vpn.startManaged();
+      fakePlatform.emit(VpnConnectionState.error);
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+
+      expect(fakePlatform.restartCalls, greaterThanOrEqualTo(1));
+      expect(fakePlatform.writtenConfigs.length, greaterThanOrEqualTo(2));
+      expect(vpn.activeEndpointProfile?.tag, 'hy2-only');
+
+      await vpn.dispose();
+      await fakePlatform.dispose();
+    },
+  );
+
   test('subscription import populates endpoint pool', () async {
     final _ManagedFakePlatform fakePlatform = _ManagedFakePlatform();
     SignboxVpnPlatform.instance = fakePlatform;
@@ -246,6 +345,7 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
         autoFailover: true,
         healthCheck: VpnHealthCheckOptions(
           checkInterval: Duration(milliseconds: 40),
+          startupGracePeriod: Duration.zero,
           maxConsecutiveFailures: 1,
           failoverOnNoTraffic: false,
           connectivityProbeEnabled: true,
@@ -260,6 +360,56 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
 
     expect(fakePlatform.restartCalls, greaterThanOrEqualTo(1));
     expect(fakePlatform.writtenConfigs.length, greaterThanOrEqualTo(2));
+
+    await vpn.dispose();
+    await fakePlatform.dispose();
+  });
+
+  test('startup grace window suppresses immediate failover churn', () async {
+    final _ManagedFakePlatform fakePlatform = _ManagedFakePlatform()
+      ..pingShouldFail = true;
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+    await vpn.applyEndpointPool(
+      profiles: <VpnProfile>[
+        VpnProfile.vless(
+          tag: 'edge-a',
+          server: 'a.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555555',
+          tls: const TlsOptions(enabled: false),
+        ),
+        VpnProfile.vless(
+          tag: 'edge-b',
+          server: 'b.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555556',
+          tls: const TlsOptions(enabled: false),
+        ),
+      ],
+      options: const EndpointPoolOptions(
+        autoFailover: true,
+        healthCheck: VpnHealthCheckOptions(
+          checkInterval: Duration(milliseconds: 40),
+          startupGracePeriod: Duration(milliseconds: 250),
+          noTrafficTimeout: Duration(seconds: 10),
+          pingEnabled: true,
+          connectivityProbeEnabled: false,
+          maxConsecutiveFailures: 1,
+        ),
+      ),
+    );
+
+    await vpn.startManaged();
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    expect(vpn.activeEndpointProfile?.tag, 'edge-a');
+    expect(fakePlatform.restartCalls, 0);
+
+    await Future<void>.delayed(const Duration(milliseconds: 520));
+    expect(fakePlatform.restartCalls, greaterThanOrEqualTo(1));
+    expect(vpn.activeEndpointProfile?.tag, 'edge-b');
 
     await vpn.dispose();
     await fakePlatform.dispose();
@@ -406,6 +556,7 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
         autoFailover: true,
         healthCheck: VpnHealthCheckOptions(
           checkInterval: Duration(milliseconds: 80),
+          startupGracePeriod: Duration.zero,
           noTrafficTimeout: Duration(seconds: 10),
           pingEnabled: true,
           pingTimeout: Duration(milliseconds: 10),
@@ -439,4 +590,53 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
     await vpn.dispose();
     await fakePlatform.dispose();
   });
+
+  test(
+    'configured tun mtu is preserved as baseline before adaptive probing',
+    () async {
+      final _ManagedFakePlatform fakePlatform = _ManagedFakePlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+      await vpn.applyEndpointPool(
+        profiles: <VpnProfile>[
+          VpnProfile.vless(
+            tag: 'edge-a',
+            server: 'a.example.com',
+            serverPort: 443,
+            uuid: '11111111-2222-3333-4444-555555555555',
+            tls: const TlsOptions(enabled: true),
+          ),
+          VpnProfile.vless(
+            tag: 'edge-b',
+            server: 'b.example.com',
+            serverPort: 443,
+            uuid: '11111111-2222-3333-4444-555555555556',
+            tls: const TlsOptions(enabled: true),
+          ),
+        ],
+        throttlePolicy: const TrafficThrottlePolicy(
+          tunMtu: 1380,
+          enableAutoMtuProbe: true,
+          mtuProbeCandidates: <int>[1400, 1380, 1360],
+        ),
+        options: const EndpointPoolOptions(
+          autoFailover: true,
+          healthCheck: VpnHealthCheckOptions(failoverOnNoTraffic: false),
+        ),
+      );
+
+      final Map<String, dynamic> firstConfig =
+          jsonDecode(fakePlatform.writtenConfigs.first) as Map<String, dynamic>;
+      final int firstMtu =
+          ((firstConfig['inbounds'] as List<dynamic>).first
+                  as Map<String, dynamic>)['mtu']
+              as int;
+      expect(firstMtu, 1380);
+
+      await vpn.dispose();
+      await fakePlatform.dispose();
+    },
+  );
 }

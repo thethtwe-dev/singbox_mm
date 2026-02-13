@@ -10,13 +10,17 @@ import java.util.concurrent.ExecutorService
 internal object VpnServiceActionExecutor {
     fun scheduleStop(
         worker: ExecutorService,
-        stopCore: (Boolean) -> Unit,
+        isStopRequested: () -> Boolean,
+        stopCoreUserInitiated: () -> Unit,
         stopForeground: (Int) -> Unit,
         stopForegroundFlag: Int,
         stopSelf: () -> Unit,
     ) {
         worker.execute {
-            stopCore(true)
+            if (!isStopRequested()) {
+                return@execute
+            }
+            stopCoreUserInitiated()
             stopForeground(stopForegroundFlag)
             stopSelf()
         }
@@ -25,11 +29,15 @@ internal object VpnServiceActionExecutor {
     fun scheduleRestart(
         worker: ExecutorService,
         configPath: String?,
+        isStopRequested: () -> Boolean,
         publishError: (String) -> Unit,
         stopCore: (Boolean) -> Unit,
         startCore: (String?) -> Unit,
     ) {
         worker.execute {
+            if (isStopRequested()) {
+                return@execute
+            }
             if (configPath.isNullOrBlank()) {
                 publishError("Missing config path for restart")
                 return@execute
@@ -42,9 +50,13 @@ internal object VpnServiceActionExecutor {
     fun scheduleStart(
         worker: ExecutorService,
         configPath: String?,
+        isStopRequested: () -> Boolean,
         startCore: (String?) -> Unit,
     ) {
         worker.execute {
+            if (isStopRequested()) {
+                return@execute
+            }
             startCore(configPath)
         }
     }

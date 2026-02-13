@@ -304,7 +304,7 @@ class GfwPresetPack {
     mode: GfwPresetMode.extreme,
     name: 'Extreme',
     description:
-        'Maximum evasion settings for very hostile links. Higher overhead and battery usage.',
+        'Maximum evasion settings for very hostile links. Enforces Reality/QUIC-family profiles only (no plain TLS fallback).',
     bypassPolicy: BypassPolicy(
       preset: BypassPolicyPreset.strict,
       directDomains: <String>['lan', 'local'],

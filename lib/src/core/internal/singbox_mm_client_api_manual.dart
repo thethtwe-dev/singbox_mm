@@ -8,6 +8,7 @@ extension SignboxVpnManualConnectApi on SignboxVpn {
     SingboxFeatureSettings? featureSettings,
     bool requestPermission = true,
   }) async {
+    _activeGfwPresetMode = null;
     return _connectManualProfileInternal(
       this,
       profile: profile,
@@ -27,6 +28,7 @@ extension SignboxVpnManualConnectApi on SignboxVpn {
     SingboxFeatureSettings? featureSettings,
     bool requestPermission = true,
   }) async {
+    _activeGfwPresetMode = null;
     return _connectManualConfigLinkInternal(
       this,
       configLink: configLink,

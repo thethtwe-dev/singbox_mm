@@ -1,5 +1,6 @@
 import 'traffic_throttle_policy.dart';
 
+/// Supported outbound protocol types.
 enum VpnProtocol {
   vless,
   vmess,
@@ -11,7 +12,9 @@ enum VpnProtocol {
   ssh,
 }
 
+/// Wire-value helpers for [VpnProtocol].
 extension VpnProtocolWire on VpnProtocol {
+  /// Returns sing-box wire value for this protocol.
   String get wireValue {
     switch (this) {
       case VpnProtocol.vless:
@@ -34,7 +37,9 @@ extension VpnProtocolWire on VpnProtocol {
   }
 }
 
+/// Health/check helpers for [VpnProtocol].
 extension VpnProtocolHealth on VpnProtocol {
+  /// Whether this protocol is primarily UDP-based.
   bool get isUdpOriented {
     switch (this) {
       case VpnProtocol.hysteria2:
@@ -51,9 +56,12 @@ extension VpnProtocolHealth on VpnProtocol {
   }
 }
 
+/// Transport options for supported TCP-based protocols.
 enum VpnTransport { tcp, ws, grpc, quic, httpUpgrade }
 
+/// Wire-value helpers for [VpnTransport].
 extension VpnTransportWire on VpnTransport {
+  /// Returns sing-box wire value for this transport.
   String get wireValue {
     switch (this) {
       case VpnTransport.tcp:
@@ -70,7 +78,9 @@ extension VpnTransportWire on VpnTransport {
   }
 }
 
+/// TLS and Reality options used by TLS-capable outbounds.
 class TlsOptions {
+  /// Creates TLS options.
   const TlsOptions({
     this.enabled = true,
     this.serverName,
@@ -81,14 +91,28 @@ class TlsOptions {
     this.alpn = const <String>['h2', 'http/1.1'],
   });
 
+  /// Whether TLS is enabled.
   final bool enabled;
+
+  /// Optional TLS SNI.
   final String? serverName;
+
+  /// Allows insecure certificate verification when `true`.
   final bool allowInsecure;
+
+  /// Optional uTLS fingerprint name.
   final String? utlsFingerprint;
+
+  /// Reality public key for VLESS-Reality.
   final String? realityPublicKey;
+
+  /// Reality short ID.
   final String? realityShortId;
+
+  /// ALPN list for TLS handshake.
   final List<String> alpn;
 
+  /// Converts TLS options to sing-box outbound JSON format.
   Map<String, Object?> toMap() {
     if (!enabled) {
       return <String, Object?>{'enabled': false};
@@ -127,7 +151,9 @@ class TlsOptions {
   }
 }
 
+/// Protocol-agnostic VPN profile model used by builders and runtime APIs.
 class VpnProfile {
+  /// Creates a protocol profile.
   const VpnProfile({
     required this.tag,
     required this.protocol,
@@ -147,6 +173,7 @@ class VpnProfile {
        assert(server != ''),
        assert(serverPort > 0);
 
+  /// Creates a VLESS profile.
   factory VpnProfile.vless({
     required String tag,
     required String server,
@@ -176,6 +203,7 @@ class VpnProfile {
     );
   }
 
+  /// Creates a VMess profile.
   factory VpnProfile.vmess({
     required String tag,
     required String server,
@@ -203,6 +231,7 @@ class VpnProfile {
     );
   }
 
+  /// Creates a Trojan profile.
   factory VpnProfile.trojan({
     required String tag,
     required String server,
@@ -230,6 +259,7 @@ class VpnProfile {
     );
   }
 
+  /// Creates a Shadowsocks profile.
   factory VpnProfile.shadowsocks({
     required String tag,
     required String server,
@@ -259,6 +289,7 @@ class VpnProfile {
     );
   }
 
+  /// Creates a Hysteria2 profile.
   factory VpnProfile.hysteria2({
     required String tag,
     required String server,
@@ -278,6 +309,7 @@ class VpnProfile {
     );
   }
 
+  /// Creates a TUIC profile.
   factory VpnProfile.tuic({
     required String tag,
     required String server,
@@ -299,6 +331,7 @@ class VpnProfile {
     );
   }
 
+  /// Creates a WireGuard profile.
   factory VpnProfile.wireguard({
     required String tag,
     required String server,
@@ -352,6 +385,7 @@ class VpnProfile {
     );
   }
 
+  /// Creates an SSH profile.
   factory VpnProfile.ssh({
     required String tag,
     required String server,
@@ -416,21 +450,49 @@ class VpnProfile {
     );
   }
 
+  /// Friendly tag/remark for UI and outbound tagging.
   final String tag;
+
+  /// Protocol type.
   final VpnProtocol protocol;
+
+  /// Remote server host/IP.
   final String server;
+
+  /// Remote server port.
   final int serverPort;
+
+  /// UUID for protocols that require it.
   final String? uuid;
+
+  /// Password/secret for protocols that require it.
   final String? password;
+
+  /// Cipher method (for Shadowsocks).
   final String? method;
+
+  /// Optional VLESS flow value.
   final String? flow;
+
+  /// Selected transport mode.
   final VpnTransport transport;
+
+  /// WebSocket/HTTP-upgrade path.
   final String? websocketPath;
+
+  /// Optional WebSocket headers.
   final Map<String, String> websocketHeaders;
+
+  /// gRPC service name.
   final String? grpcServiceName;
+
+  /// TLS options.
   final TlsOptions tls;
+
+  /// Extra protocol-specific attributes merged into outbound JSON.
   final Map<String, Object?> extra;
 
+  /// Converts this profile into sing-box outbound JSON.
   Map<String, Object?> toOutboundJson({
     required TrafficThrottlePolicy throttle,
   }) {
@@ -443,6 +505,7 @@ class VpnProfile {
       'tcp_fast_open': throttle.tcpFastOpen,
       'udp_fragment': throttle.udpFragment,
     };
+    final Set<String> handledExtraKeys = <String>{};
 
     switch (protocol) {
       case VpnProtocol.vless:
@@ -465,6 +528,16 @@ class VpnProfile {
           password,
           'password is required for ${protocol.wireValue}',
         );
+        if (protocol == VpnProtocol.hysteria2) {
+          _applyHysteria2Obfs(
+            source: extra,
+            target: outbound,
+            handledKeys: handledExtraKeys,
+          );
+          _putIfHasInt(extra, outbound, 'up_mbps');
+          _putIfHasInt(extra, outbound, 'down_mbps');
+          handledExtraKeys.addAll(const <String>{'up_mbps', 'down_mbps'});
+        }
         break;
       case VpnProtocol.shadowsocks:
         outbound['method'] = _requiredString(
@@ -543,6 +616,7 @@ class VpnProfile {
     }
 
     final Map<String, Object?> tlsConfig = tls.toMap();
+    _normalizeTlsForProtocol(tlsConfig);
     if (tlsConfig['enabled'] == true && _supportsTls()) {
       outbound['tls'] = tlsConfig;
     }
@@ -557,7 +631,16 @@ class VpnProfile {
     }
 
     if (extra.isNotEmpty) {
-      outbound.addAll(extra);
+      if (handledExtraKeys.isEmpty) {
+        outbound.addAll(extra);
+      } else {
+        extra.forEach((String key, Object? value) {
+          if (handledExtraKeys.contains(key)) {
+            return;
+          }
+          outbound[key] = value;
+        });
+      }
     }
 
     return outbound;
@@ -594,6 +677,28 @@ class VpnProfile {
       case VpnProtocol.wireguard:
       case VpnProtocol.ssh:
         return false;
+    }
+  }
+
+  void _normalizeTlsForProtocol(Map<String, Object?> tlsConfig) {
+    if (tlsConfig.isEmpty || tlsConfig['enabled'] != true) {
+      return;
+    }
+
+    switch (protocol) {
+      case VpnProtocol.hysteria2:
+      case VpnProtocol.tuic:
+        // sing-box rejects uTLS on Hysteria2/TUIC (runtime error:
+        // "unsupported usage for uTLS"), so keep native TLS fields only.
+        tlsConfig.remove('utls');
+        break;
+      case VpnProtocol.vless:
+      case VpnProtocol.vmess:
+      case VpnProtocol.trojan:
+      case VpnProtocol.shadowsocks:
+      case VpnProtocol.wireguard:
+      case VpnProtocol.ssh:
+        break;
     }
   }
 
@@ -727,6 +832,55 @@ class VpnProfile {
       }
     }
     return null;
+  }
+
+  static void _applyHysteria2Obfs({
+    required Map<String, Object?> source,
+    required Map<String, Object?> target,
+    required Set<String> handledKeys,
+  }) {
+    handledKeys.addAll(const <String>{
+      'obfs',
+      'obfs_password',
+      'obfs-password',
+      'obfspassword',
+    });
+
+    final Object? rawObfs = source['obfs'];
+    String? obfsType;
+    String? obfsPassword;
+    Map<String, Object?>? obfsObject;
+
+    if (rawObfs is String) {
+      obfsType = _extraString(rawObfs);
+    } else if (rawObfs is Map<Object?, Object?>) {
+      obfsObject = <String, Object?>{};
+      rawObfs.forEach((Object? key, Object? value) {
+        if (key is String) {
+          obfsObject![key] = value;
+        }
+      });
+      obfsType = _extraString(obfsObject['type']);
+      obfsPassword = _extraString(obfsObject['password']);
+    }
+
+    obfsPassword ??= _extraString(source['obfs_password']);
+    obfsPassword ??= _extraString(source['obfs-password']);
+    obfsPassword ??= _extraString(source['obfspassword']);
+
+    if (obfsType == null || obfsType.isEmpty) {
+      return;
+    }
+
+    final Map<String, Object?> normalizedObfs =
+        obfsObject ?? <String, Object?>{};
+    normalizedObfs['type'] = obfsType;
+    if (obfsPassword != null && obfsPassword.isNotEmpty) {
+      normalizedObfs['password'] = obfsPassword;
+    } else {
+      normalizedObfs.remove('password');
+    }
+    target['obfs'] = normalizedObfs;
   }
 
   static void _putIfHasString(

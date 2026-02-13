@@ -7,6 +7,7 @@ extension SignboxVpnDiagnosticsApi on SignboxVpn {
     String? connectivityProbeUrl,
     Duration? connectivityProbeTimeout,
     Map<String, String> connectivityProbeHeaders = const <String, String>{},
+    bool allowConnectivityProbeFallback = true,
   }) async {
     return _pingProfileInternal(
       this,
@@ -15,6 +16,7 @@ extension SignboxVpnDiagnosticsApi on SignboxVpn {
       connectivityProbeUrl: connectivityProbeUrl,
       connectivityProbeTimeout: connectivityProbeTimeout,
       connectivityProbeHeaders: connectivityProbeHeaders,
+      allowConnectivityProbeFallback: allowConnectivityProbeFallback,
     );
   }
 

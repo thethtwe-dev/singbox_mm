@@ -8,7 +8,7 @@ class SingboxRuntimeOptions {
     this.logLevel = 'info',
     this.tunInterfaceName = 'sb-tun',
     this.tunInet4Address = '172.19.0.1/30',
-    this.statsEmitIntervalMs = 1000,
+    this.statsEmitIntervalMs = 1500,
     this.enableVerboseLogs = false,
   }) : assert(statsEmitIntervalMs >= 250 && statsEmitIntervalMs <= 10000);
 

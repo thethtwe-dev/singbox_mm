@@ -20,5 +20,6 @@ Future<VpnProfile> _applyEndpointUsingPoolPolicyInternal(
   if (reconnect) {
     await client._guard(() => client._platform.restartVpn());
   }
+  await _rememberEndpointForCurrentNetworkInternal(client, selected);
   return selected;
 }

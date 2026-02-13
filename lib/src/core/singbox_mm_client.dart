@@ -82,6 +82,8 @@ class SignboxVpn {
     VpnProtocol.hysteria2,
     VpnProtocol.tuic,
   };
+  static const String _unknownNetworkClass = 'unknown';
+  static const String _stoppedByUserErrorMarker = 'STOPPED_BY_USER';
 
   SignboxVpn({
     SignboxVpnPlatform? platform,
@@ -103,6 +105,8 @@ class SignboxVpn {
   final List<_EndpointHealthState> _endpointHealthStates =
       <_EndpointHealthState>[];
   final Map<String, int> _endpointMtuProbeCursorByTag = <String, int>{};
+  final Map<String, String> _preferredEndpointTagByNetworkClass =
+      <String, String>{};
   VpnProfile? _standaloneProfile;
 
   int _activeEndpointIndex = -1;
@@ -116,13 +120,17 @@ class SignboxVpn {
 
   StreamSubscription<VpnConnectionState>? _managedStateSubscription;
   Timer? _healthTimer;
+  int _healthTickCounter = 0;
   VpnConnectionState _lastManagedState = VpnConnectionState.disconnected;
   bool _manualStopRequested = false;
   bool _failoverInProgress = false;
+  GfwPresetMode? _activeGfwPresetMode;
+  String _lastKnownNetworkClass = _unknownNetworkClass;
 
   int? _lastTotalBytes;
   DateTime? _lastTrafficProgressAt;
   bool _hasSeenTraffic = false;
+  DateTime? _lastConnectedAt;
 
   Stream<VpnConnectionState> get stateStream => _platform.stateStream;
   Stream<VpnConnectionSnapshot> get stateDetailsStream =>

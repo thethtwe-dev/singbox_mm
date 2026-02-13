@@ -22,6 +22,8 @@ class FakeSignboxVpnPlatform
   bool throwOnGetStats = false;
   int permissionRequests = 0;
   int syncCalls = 0;
+  int pingRequests = 0;
+  VpnConnectionSnapshot? stateDetailsOverride;
   final Map<String, int> pingLatencyByHost = <String, int>{};
 
   @override
@@ -95,6 +97,9 @@ class FakeSignboxVpnPlatform
 
   @override
   Future<VpnConnectionSnapshot> getStateDetails() async {
+    if (stateDetailsOverride case final VpnConnectionSnapshot snapshot) {
+      return snapshot;
+    }
     return VpnConnectionSnapshot(
       state: started
           ? VpnConnectionState.connected
@@ -131,6 +136,7 @@ class FakeSignboxVpnPlatform
     String? tlsServerName,
     bool allowInsecure = false,
   }) async {
+    pingRequests++;
     if (pingShouldFail) {
       return VpnPingResult.failure(host: host, port: port, error: 'timeout');
     }
@@ -348,6 +354,62 @@ void main() {
     expect(clashApi['external_controller'], '127.0.0.1:16756');
   });
 
+  test('applyProfile keeps native tls block for hysteria2 outbound', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.hysteria2(
+        tag: 'hy2-node',
+        server: 'hy2.example.com',
+        serverPort: 8443,
+        password: 'hy2-pass',
+        tls: const TlsOptions(
+          enabled: true,
+          serverName: 'hy2.example.com',
+          allowInsecure: true,
+        ),
+        extra: const <String, Object?>{
+          'obfs': <String, Object?>{
+            'type': 'salamander',
+            'password': 'hy2-obfs-pass',
+          },
+        },
+      ),
+      featureSettings: const SingboxFeatureSettings(
+        tlsTricks: TlsTricksOptions(enableTlsFragment: true),
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> hy2Outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> && item['tag'] == 'hy2-node',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+
+    expect(hy2Outbound['type'], 'hysteria2');
+    expect(hy2Outbound['tls'], isA<Map<dynamic, dynamic>>());
+    expect(hy2Outbound['obfs'], <String, dynamic>{
+      'type': 'salamander',
+      'password': 'hy2-obfs-pass',
+    });
+
+    final Map<dynamic, dynamic> tls =
+        hy2Outbound['tls'] as Map<dynamic, dynamic>;
+    expect(tls['enabled'], isTrue);
+    expect(tls['server_name'], 'hy2.example.com');
+    expect(tls.containsKey('fragment'), isFalse);
+    expect(tls.containsKey('utls'), isFalse);
+  });
+
   test('dns provider preset maps to expected resolver endpoints', () async {
     final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
     SignboxVpnPlatform.instance = fakePlatform;
@@ -560,6 +622,17 @@ void main() {
     expect(tags.contains('dns-fakeip'), isTrue);
     expect(tags.contains('dns-remote-fallback'), isTrue);
     expect((dns['fakeip'] as Map<String, dynamic>)['enabled'], isTrue);
+    expect(dns['final'], 'dns-remote');
+
+    final Map<String, dynamic> fallbackServer =
+        (servers.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'dns-remote-fallback',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    expect(fallbackServer['detour'], 'proxy-main');
 
     final List<dynamic> rules = dns['rules'] as List<dynamic>;
     expect(
@@ -573,6 +646,53 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'hysteria2 prefers direct doh fallback as final dns server for resilience',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.hysteria2(
+          tag: 'hy2-main',
+          server: 'hy2.example.com',
+          serverPort: 443,
+          password: 'secret',
+          tls: const TlsOptions(enabled: true, serverName: 'hy2.example.com'),
+        ),
+        featureSettings: const SingboxFeatureSettings(
+          dns: DnsOptions(
+            remoteDns: 'https://1.1.1.1/dns-query',
+            directDns: 'local',
+            enableDohFallback: true,
+            dohFallbackDns: 'https://dns.google/dns-query',
+            dohFallbackDomainSuffixes: <String>['google.com'],
+          ),
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final Map<String, dynamic> dns = config['dns'] as Map<String, dynamic>;
+      expect(dns['final'], 'dns-remote-fallback');
+
+      final List<dynamic> servers = dns['servers'] as List<dynamic>;
+      final Map<String, dynamic> fallbackServer =
+          (servers.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'dns-remote-fallback',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      expect(fallbackServer['detour'], 'direct');
+      expect(fallbackServer['address_resolver'], 'dns-direct');
+    },
+  );
 
   test(
     'strict-route mode keeps inet6 TUN address when ipv6 route mode is disabled',
@@ -606,6 +726,66 @@ void main() {
                   as Map<dynamic, dynamic>)
               .cast<String, dynamic>();
       expect(tunInbound['inet6_address'], isNotNull);
+    },
+  );
+
+  test(
+    'hysteria2 with ipv6 disabled forces ipv4-only DNS and disables tun inet6 capture',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.hysteria2(
+          tag: 'hy2-ipv4',
+          server: 'hy2.example.com',
+          serverPort: 8443,
+          password: 'hy2-pass',
+          tls: const TlsOptions(enabled: true, serverName: 'hy2.example.com'),
+        ),
+        featureSettings: const SingboxFeatureSettings(
+          route: RouteOptions(ipv6RouteMode: SingboxIpv6RouteMode.disable),
+          inbound: InboundOptions(strictRoute: true),
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> inbounds = config['inbounds'] as List<dynamic>;
+      final Map<String, dynamic> tunInbound =
+          (inbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> && item['type'] == 'tun',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      expect(tunInbound.containsKey('inet6_address'), isFalse);
+
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> hy2Outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'hy2-ipv4',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      expect(hy2Outbound['domain_strategy'], 'ipv4_only');
+
+      final Map<String, dynamic> dns = config['dns'] as Map<String, dynamic>;
+      expect(dns['strategy'], 'ipv4_only');
+      final List<dynamic> servers = dns['servers'] as List<dynamic>;
+      final Map<String, dynamic> remoteDns =
+          (servers.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'dns-remote',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      expect(remoteDns['strategy'], 'ipv4_only');
     },
   );
 
@@ -934,23 +1114,26 @@ void main() {
   });
 
   test(
-    'manual connect with security=none keeps tls disabled even with gfw preset',
+    'manual connect with extreme preset rejects non-reality fallback links',
     () async {
       final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
       SignboxVpnPlatform.instance = fakePlatform;
       final SignboxVpn vpn = SignboxVpn();
 
-      await vpn.connectManualConfigLinkWithPreset(
-        configLink:
-            'vless://11111111-2222-3333-4444-555555555555@manual.example.com:29485?type=tcp&security=none#manual-node',
-        preset: GfwPresetPack.extreme(),
+      await expectLater(
+        () => vpn.connectManualConfigLinkWithPreset(
+          configLink:
+              'vless://11111111-2222-3333-4444-555555555555@manual.example.com:29485?type=tcp&security=none#manual-node',
+          preset: GfwPresetPack.extreme(),
+        ),
+        throwsA(
+          isA<SignboxVpnException>().having(
+            (SignboxVpnException error) => error.code,
+            'code',
+            'EXTREME_PRESET_PROTOCOL_BLOCKED',
+          ),
+        ),
       );
-
-      final Map<String, dynamic> config =
-          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
-      final Map<String, dynamic> outbound =
-          (config['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
-      expect(outbound.containsKey('tls'), isFalse);
     },
   );
 
@@ -1081,25 +1264,72 @@ void main() {
     expect(vpn.activeEndpointProfile?.tag, 'fast');
   });
 
-  test('auto connect with gfw preset uses endpoint pool defaults', () async {
-    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform()
-      ..pingLatencyByHost['a.example.com'] = 70
-      ..pingLatencyByHost['b.example.com'] = 30;
-    SignboxVpnPlatform.instance = fakePlatform;
-    final SignboxVpn vpn = SignboxVpn();
+  test(
+    'auto connect with extreme preset enforces protocol gate and transport ladder',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform()
+        ..pingLatencyByHost['reality.example.com'] = 120
+        ..pingLatencyByHost['hy2.example.com'] = 20;
+      SignboxVpnPlatform.instance = fakePlatform;
+      final SignboxVpn vpn = SignboxVpn();
 
-    const String rawSubscription =
-        'vless://11111111-2222-3333-4444-555555555555@a.example.com:443?security=tls#a\n'
-        'vless://11111111-2222-3333-4444-555555555556@b.example.com:443?security=tls#b';
+      const String rawSubscription =
+          'vless://11111111-2222-3333-4444-555555555555@fallback.example.com:443?security=tls#fallback\n'
+          'vless://11111111-2222-3333-4444-555555555556@reality.example.com:443?security=reality&pbk=example-public-key&sid=abcd#reality\n'
+          'hysteria2://hy2-pass@hy2.example.com:8443?sni=hy2.example.com#hy2';
 
-    final AutoConnectResult result = await vpn.connectAutoWithPreset(
-      rawSubscription: rawSubscription,
-      preset: GfwPresetPack.extreme(),
-    );
+      final AutoConnectResult result = await vpn.connectAutoWithPreset(
+        rawSubscription: rawSubscription,
+        preset: GfwPresetPack.extreme(),
+      );
 
-    expect(result.selectedProfile?.tag, 'b');
-    expect(vpn.endpointPool.length, 2);
-  });
+      expect(result.importResult.importedCount, 2);
+      expect(result.importResult.invalidCount, 1);
+      expect(result.selectedProfile?.tag, 'reality');
+      expect(vpn.endpointPool.length, 2);
+      expect(
+        vpn.endpointPool.map((VpnProfile profile) => profile.tag),
+        containsAll(<String>['reality', 'hy2']),
+      );
+    },
+  );
+
+  test(
+    'auto connect with extreme preset reuses per-network preferred endpoint',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform()
+        ..stateDetailsOverride = VpnConnectionSnapshot(
+          state: VpnConnectionState.connected,
+          timestamp: DateTime.now().toUtc(),
+          underlyingTransports: const <String>['wifi'],
+        )
+        ..pingLatencyByHost['reality.example.com'] = 120
+        ..pingLatencyByHost['hy2.example.com'] = 20;
+      SignboxVpnPlatform.instance = fakePlatform;
+      final SignboxVpn vpn = SignboxVpn();
+
+      const String rawSubscription =
+          'vless://11111111-2222-3333-4444-555555555555@reality.example.com:443?security=reality&pbk=example-public-key&sid=abcd#reality\n'
+          'hysteria2://hy2-pass@hy2.example.com:8443?sni=hy2.example.com#hy2';
+
+      final AutoConnectResult first = await vpn.connectAutoWithPreset(
+        rawSubscription: rawSubscription,
+        preset: GfwPresetPack.extreme(),
+        preferLowestLatency: false,
+      );
+      expect(first.selectedProfile?.tag, 'reality');
+
+      fakePlatform.pingRequests = 0;
+      final AutoConnectResult second = await vpn.connectAutoWithPreset(
+        rawSubscription: rawSubscription,
+        preset: GfwPresetPack.extreme(),
+        preferLowestLatency: true,
+      );
+      expect(second.selectedProfile?.tag, 'reality');
+      expect(second.pingResults, isEmpty);
+      expect(fakePlatform.pingRequests, 0);
+    },
+  );
 
   test('select endpoint manually and auto-select best endpoint', () async {
     final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform()

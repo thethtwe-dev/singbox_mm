@@ -4,6 +4,15 @@ int _selectInitialEndpointIndexInternal(SignboxVpn client) {
   if (client._endpointPool.length <= 1) {
     return 0;
   }
+  if (client._activeGfwPresetMode != null) {
+    final int preferred = _preferredEndpointIndexForNetworkClassInternal(
+      client,
+      networkClass: client._lastKnownNetworkClass,
+    );
+    if (preferred >= 0) {
+      return preferred;
+    }
+  }
   if (client._endpointPoolOptions.rotationStrategy ==
       EndpointRotationStrategy.roundRobin) {
     return 0;
@@ -11,11 +20,16 @@ int _selectInitialEndpointIndexInternal(SignboxVpn client) {
 
   int bestIndex = 0;
   int bestScore = -1;
+  int bestTier = 1 << 20;
   for (int i = 0; i < client._endpointPool.length; i++) {
     final int score = client._endpointHealthStates[i].score;
-    if (score > bestScore) {
+    final int tier = client._activeGfwPresetMode == null
+        ? 0
+        : _adaptiveTransportTierInternal(client._endpointPool[i]);
+    if (score > bestScore || (score == bestScore && tier < bestTier)) {
       bestIndex = i;
       bestScore = score;
+      bestTier = tier;
     }
   }
   return bestIndex;
@@ -70,6 +84,7 @@ int _selectHealthiestNextInternal(
   final DateTime now = DateTime.now().toUtc();
   int bestIndex = -1;
   int bestScore = -1;
+  int bestTier = 1 << 20;
 
   for (int index = 0; index < client._endpointPool.length; index++) {
     if (excludeCurrent && index == client._activeEndpointIndex) {
@@ -83,7 +98,11 @@ int _selectHealthiestNextInternal(
     if (coolingDown) {
       continue;
     }
-    if (state.score > bestScore) {
+    final int tier = client._activeGfwPresetMode == null
+        ? 0
+        : _adaptiveTransportTierInternal(client._endpointPool[index]);
+    if (tier < bestTier || (tier == bestTier && state.score > bestScore)) {
+      bestTier = tier;
       bestScore = state.score;
       bestIndex = index;
     }

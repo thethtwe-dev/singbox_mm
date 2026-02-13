@@ -1,8 +1,8 @@
 part of '../singbox_mm_client.dart';
 
 Future<bool> _attemptFailoverInternal(SignboxVpn client) async {
-  if (client._endpointPool.isEmpty ||
-      !client._endpointPoolOptions.autoFailover ||
+  if (!client._endpointPoolOptions.autoFailover ||
+      client._endpointPool.isEmpty ||
       client._manualStopRequested ||
       client._failoverInProgress) {
     return false;
@@ -14,7 +14,7 @@ Future<bool> _attemptFailoverInternal(SignboxVpn client) async {
       return true;
     }
     if (client._endpointPool.length < 2) {
-      return false;
+      return _restartActiveEndpointInternal(client);
     }
 
     final int nextIndex = _selectNextEndpointIndexInternal(
@@ -42,6 +42,33 @@ Future<bool> _attemptFailoverInternal(SignboxVpn client) async {
   }
 }
 
+Future<bool> _restartActiveEndpointInternal(SignboxVpn client) async {
+  if (client._activeEndpointIndex < 0 ||
+      client._activeEndpointIndex >= client._endpointPool.length) {
+    return false;
+  }
+  final VpnProfile active = client._endpointPool[client._activeEndpointIndex];
+  try {
+    await client.applyProfile(
+      profile: active,
+      bypassPolicy: client._endpointBypassPolicy,
+      throttlePolicy: _effectiveThrottlePolicyForProfileInternal(
+        client,
+        profile: active,
+        base: client._endpointThrottlePolicy,
+      ),
+      featureSettings: client._endpointFeatureSettings,
+      clearEndpointPool: false,
+    );
+    await client._guard(() => client._platform.restartVpn());
+    _resetTrafficTrackingInternal(client);
+    _markEndpointSuccessInternal(client, client._activeEndpointIndex);
+    return true;
+  } on Object {
+    return false;
+  }
+}
+
 Future<bool> _attemptMtuProbeRecoveryInternal(SignboxVpn client) async {
   if (client._activeEndpointIndex < 0 ||
       client._activeEndpointIndex >= client._endpointPool.length) {
@@ -61,8 +88,12 @@ Future<bool> _attemptMtuProbeRecoveryInternal(SignboxVpn client) async {
     return false;
   }
 
+  final int configuredMtuIndex = max(
+    0,
+    candidates.indexOf(client._endpointThrottlePolicy.tunMtu),
+  );
   final int currentIndex =
-      client._endpointMtuProbeCursorByTag[profile.tag] ?? 0;
+      client._endpointMtuProbeCursorByTag[profile.tag] ?? configuredMtuIndex;
   if (currentIndex >= candidates.length - 1) {
     return false;
   }
@@ -70,9 +101,17 @@ Future<bool> _attemptMtuProbeRecoveryInternal(SignboxVpn client) async {
   final int nextIndex = currentIndex + 1;
   final int tunedMtu = candidates[nextIndex];
   client._endpointMtuProbeCursorByTag[profile.tag] = nextIndex;
+  final bool forceUdpFragment = _shouldForceUdpFragmentForProfileInternal(
+    profile,
+  );
 
   final TrafficThrottlePolicy tunedPolicy = client._endpointThrottlePolicy
-      .copyWith(tunMtu: tunedMtu, udpFragment: true);
+      .copyWith(
+        tunMtu: tunedMtu,
+        udpFragment: forceUdpFragment
+            ? true
+            : client._endpointThrottlePolicy.udpFragment,
+      );
 
   return () async {
     try {

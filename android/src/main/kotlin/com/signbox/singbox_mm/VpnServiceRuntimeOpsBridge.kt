@@ -19,6 +19,7 @@ internal class VpnServiceRuntimeOpsBridge(
     }
 
     fun serviceReload() {
+        runtimeSession.suppressPostServiceCloseFor(15_000L)
         VpnServiceActionExecutor.reloadService(
             commandServer = runtimeSession.commandServer,
             oldService = runtimeSession.boxService,
@@ -34,6 +35,10 @@ internal class VpnServiceRuntimeOpsBridge(
     }
 
     fun postServiceClose() {
+        if (runtimeSession.shouldIgnorePostServiceClose()) {
+            writeLog("postServiceClose ignored during controlled restart/reload")
+            return
+        }
         scheduleStop()
     }
 

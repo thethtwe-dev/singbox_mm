@@ -308,6 +308,7 @@ class VpnConfigParser {
     Map<String, String> query, {
     required String fallbackServerName,
     required bool defaultEnabled,
+    List<String> defaultAlpn = const <String>['h2', 'http/1.1'],
   }) {
     final String? security = _firstValue(query, const <String>[
       'security',
@@ -360,7 +361,7 @@ class VpnConfigParser {
         'shortid',
         'short_id',
       ]),
-      alpn: parsedAlpn.isEmpty ? const <String>['h2', 'http/1.1'] : parsedAlpn,
+      alpn: parsedAlpn.isEmpty ? defaultAlpn : parsedAlpn,
     );
   }
 

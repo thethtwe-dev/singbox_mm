@@ -34,6 +34,6 @@ internal object PluginStates {
 
 internal object PluginDefaults {
     const val CONFIG_FILE_NAME = "active-config.json"
-    const val STATS_EMIT_INTERVAL_MS = 1000L
+    const val STATS_EMIT_INTERVAL_MS = 1500L
     const val NETWORK_VALIDATION_GRACE_MS = 12_000L
 }

@@ -239,6 +239,98 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
     );
   }
 
+  bool _isExtremeEligibleProfile(VpnProfile profile) {
+    switch (profile.protocol) {
+      case VpnProtocol.vless:
+        return profile.tls.enabled &&
+            (profile.tls.realityPublicKey?.isNotEmpty ?? false);
+      case VpnProtocol.hysteria2:
+      case VpnProtocol.tuic:
+        return profile.tls.enabled;
+      case VpnProtocol.vmess:
+      case VpnProtocol.trojan:
+      case VpnProtocol.shadowsocks:
+      case VpnProtocol.wireguard:
+      case VpnProtocol.ssh:
+        return false;
+    }
+  }
+
+  Future<bool> _promptSwitchExtremeToAggressive(VpnProfile profile) async {
+    if (!mounted) {
+      return false;
+    }
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Extreme Preset Compatibility'),
+          content: Text(
+            'Current link (${profile.protocol.wireValue}) is not compatible '
+            'with Extreme preset.\n\n'
+            'Extreme allows only VLESS-Reality, Hysteria2, or TUIC.\n\n'
+            'Switch preset to Aggressive and continue?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Switch to Aggressive'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _ensureExtremePresetCompatibleOrOfferDowngrade() async {
+    if (_selectedPresetMode != GfwPresetMode.extreme) {
+      return;
+    }
+    final ParsedVpnConfig parsed = _vpn.parseConfigLink(
+      _requireConfigLink(),
+      sbmmPassphrase: _optionalPassphrase(),
+    );
+    if (_isExtremeEligibleProfile(parsed.profile)) {
+      return;
+    }
+    final bool accepted = await _promptSwitchExtremeToAggressive(
+      parsed.profile,
+    );
+    if (!accepted) {
+      throw SignboxVpnException(
+        code: 'EXTREME_PRESET_PROTOCOL_BLOCKED',
+        message:
+            'Cancelled. Extreme preset requires VLESS-Reality, Hysteria2, or TUIC.',
+      );
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedPresetMode = GfwPresetMode.aggressive;
+    });
+    _appendLog(
+      'Preset switch: extreme -> aggressive '
+      'for ${parsed.profile.protocol.wireValue}://${parsed.profile.server}:${parsed.profile.serverPort}',
+    );
+    _setMessage(
+      'Current link is not Extreme-compatible. Switched to Aggressive.',
+    );
+  }
+
+  String _formatSignboxError(SignboxVpnException error) {
+    if (error.code == 'EXTREME_PRESET_PROTOCOL_BLOCKED') {
+      return '${error.code}: ${error.message} '
+          '(Use VLESS-Reality/Hysteria2/TUIC for Extreme, or switch to Aggressive.)';
+    }
+    return '${error.code}: ${error.message}';
+  }
+
   Future<void> _logSubscriptionCoreCompatibility(
     ParsedVpnSubscription parsed,
   ) async {
@@ -281,7 +373,7 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
       await action();
       _appendLog('$label: OK');
     } on SignboxVpnException catch (error) {
-      _setMessage('${error.code}: ${error.message}');
+      _setMessage(_formatSignboxError(error));
       _appendLog('$label: FAIL ${error.code} ${error.message}');
     } on FormatException catch (error) {
       _setMessage('FORMAT_ERROR: ${error.message}');
@@ -420,6 +512,7 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
 
   Future<void> _connectHardened() async {
     await _ensureCurrentConfigProtocolSupported();
+    await _ensureExtremePresetCompatibleOrOfferDowngrade();
     final ManualConnectResult result = await _vpn
         .connectManualConfigLinkWithPreset(
           configLink: _requireConfigLink(),
@@ -433,6 +526,7 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
 
   Future<void> _connectManualProfileDirect() async {
     await _ensureCurrentConfigProtocolSupported();
+    await _ensureExtremePresetCompatibleOrOfferDowngrade();
     final ParsedVpnConfig parsed = _vpn.parseConfigLink(
       _requireConfigLink(),
       sbmmPassphrase: _optionalPassphrase(),
@@ -456,6 +550,7 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
 
   Future<void> _connectManualPresetDirect() async {
     await _ensureCurrentConfigProtocolSupported();
+    await _ensureExtremePresetCompatibleOrOfferDowngrade();
     final ParsedVpnConfig parsed = _vpn.parseConfigLink(
       _requireConfigLink(),
       sbmmPassphrase: _optionalPassphrase(),

@@ -9,6 +9,7 @@ class SingboxInboundBuilder {
     required TrafficThrottlePolicy throttlePolicy,
     required String tunInterfaceName,
     required String tunInet4Address,
+    required bool disableIpv6Capture,
   }) {
     final List<Object?> inbounds = <Object?>[];
     final bool sniff = settings.route.resolveDestination;
@@ -27,8 +28,9 @@ class SingboxInboundBuilder {
       // Keep IPv6 TUN capture for strict-route VPN mode to avoid
       // app-level IPv6 "No route to host" failures on stacks that prefer AAAA.
       final bool captureIpv6InTun =
-          settings.route.ipv6RouteMode != SingboxIpv6RouteMode.disable ||
-          settings.inbound.strictRoute;
+          settings.route.ipv6RouteMode != SingboxIpv6RouteMode.disable
+          ? true
+          : !disableIpv6Capture && settings.inbound.strictRoute;
       final Map<String, Object?> tunInbound = <String, Object?>{
         'type': 'tun',
         'tag': 'tun-in',

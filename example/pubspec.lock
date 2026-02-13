@@ -208,7 +208,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "0.1.0"
+    version: "0.1.1"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -304,4 +304,4 @@ packages:
     version: "3.1.0"
 sdks:
   dart: ">=3.10.8 <4.0.0"
-  flutter: ">=3.18.0-18.0.pre.54"
+  flutter: ">=3.38.0"

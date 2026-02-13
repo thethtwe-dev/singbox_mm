@@ -1,3 +1,27 @@
+## Unreleased
+
+- Improved endpoint-pool ping throughput with bounded parallel probing
+  (up to 4 concurrent workers) while preserving deterministic result order.
+- Reduced Android stats stream overhead with payload de-duplication plus
+  heartbeat emission (every 5s) for UI freshness.
+- Fixed disconnected stats semantics so totals/speeds reset to `0` while VPN
+  is not connected.
+- Clarified `Extreme` preset compatibility in docs:
+  only `VLESS-Reality`, `Hysteria2`, and `TUIC` are allowed; incompatible
+  profiles are blocked with `EXTREME_PRESET_PROTOCOL_BLOCKED`.
+- Updated example app connect UX:
+  when `Extreme` is selected with an incompatible manual link, users are
+  prompted to switch to `Aggressive` before connect.
+- Fixed Android strict-Private-DNS compatibility priority:
+  private DNS host rules are now prepended so they win over global DNS
+  interception rules (prevents `PRIVATE_DNS_BROKEN` regressions with custom
+  providers like AdGuard).
+- Fixed Android TUN DNS behavior under strict Private DNS:
+  keep core-provided TUN DNS when present, and use bootstrap DNS only as
+  fallback.
+- Expanded dartdoc coverage for public API surfaces and top-level exports to
+  improve pub.dev documentation scoring.
+
 ## 0.1.1
 
 - Updated package links to the correct GitHub repository (`homepage`,

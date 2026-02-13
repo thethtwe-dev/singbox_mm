@@ -21,6 +21,7 @@ internal object SignboxLibboxServiceContract {
     const val EXTRA_CONFIG_PATH = "configPath"
     const val EXTRA_STATE = "state"
     const val EXTRA_ERROR = "error"
+    const val ERROR_STOPPED_BY_USER = "STOPPED_BY_USER"
     const val STATE_DISCONNECTED = "disconnected"
     const val STATE_PREPARING = "preparing"
     const val STATE_CONNECTING = "connecting"

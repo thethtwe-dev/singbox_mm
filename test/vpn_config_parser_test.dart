@@ -105,12 +105,18 @@ void main() {
 
   test('parse hysteria2 and tuic links', () {
     final ParsedVpnConfig hy2 = parser.parse(
-      'hysteria2://hy2pass@example.com:8443?sni=edge.example.com#node-hy2',
+      'hysteria2://hy2pass@example.com:8443?sni=edge.example.com&obfs=salamander&obfs-password=hy2-obfs-pass#node-hy2',
     );
     expect(hy2.profile.protocol, VpnProtocol.hysteria2);
     expect(hy2.profile.password, 'hy2pass');
     expect(hy2.profile.tls.enabled, isTrue);
     expect(hy2.profile.tls.serverName, 'edge.example.com');
+    expect(hy2.profile.tls.alpn, isEmpty);
+    expect(hy2.profile.extra['obfs'], <String, Object?>{
+      'type': 'salamander',
+      'password': 'hy2-obfs-pass',
+    });
+    expect(hy2.profile.extra.containsKey('obfs_password'), isFalse);
 
     final ParsedVpnConfig tuic = parser.parse(
       'tuic://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:tuic-pass@example.com:443?sni=example.com#node-tuic',
@@ -119,6 +125,7 @@ void main() {
     expect(tuic.profile.uuid, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
     expect(tuic.profile.password, 'tuic-pass');
     expect(tuic.profile.tls.enabled, isTrue);
+    expect(tuic.profile.tls.alpn, isEmpty);
   });
 
   test('parse hysteria alias link', () {
@@ -259,6 +266,37 @@ Endpoint = 198.51.100.2:51820
     );
     expect(outbound['uuid'], 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
     expect(outbound['password'], 'tuic-pass');
+    final Map<String, Object?> tls = (outbound['tls'] as Map<dynamic, dynamic>)
+        .cast<String, Object?>();
+    expect(tls.containsKey('utls'), isFalse);
+  });
+
+  test('hysteria2 outbound normalizes legacy obfs fields', () {
+    final VpnProfile profile = VpnProfile.hysteria2(
+      tag: 'node-hy2',
+      server: 'hy2.example.com',
+      serverPort: 8443,
+      password: 'hy2-pass',
+      extra: const <String, Object?>{
+        'obfs': 'salamander',
+        'obfs_password': 'hy2-obfs-pass',
+      },
+    );
+
+    final Map<String, Object?> outbound = profile.toOutboundJson(
+      throttle: const TrafficThrottlePolicy(),
+    );
+
+    expect(outbound['type'], 'hysteria2');
+    expect(outbound['password'], 'hy2-pass');
+    expect(outbound['obfs'], <String, Object?>{
+      'type': 'salamander',
+      'password': 'hy2-obfs-pass',
+    });
+    expect(outbound.containsKey('obfs_password'), isFalse);
+    final Map<String, Object?> tls = (outbound['tls'] as Map<dynamic, dynamic>)
+        .cast<String, Object?>();
+    expect(tls.containsKey('utls'), isFalse);
   });
 
   test('wireguard outbound includes required keys', () {

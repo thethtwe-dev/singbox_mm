@@ -15,7 +15,7 @@ internal class VpnServiceRuntimeGraph(
         service.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     }
     private val resolvePrivateDnsHost: () -> String? = {
-        VpnPrivateDnsHostResolver.resolve(connectivity)
+        VpnPrivateDnsHostResolver.resolve(service, connectivity)
     }
     private val mainHandler by lazy {
         Handler(Looper.getMainLooper())

@@ -61,6 +61,10 @@ class SingboxDnsBuilder {
         _looksLikeDohAddress(remoteAddress) &&
         dohFallbackAddress.isNotEmpty &&
         dohFallbackAddress.toLowerCase() != remoteAddress.toLowerCase();
+    final bool preferDirectDohFallback =
+        enableDohFallback &&
+        (profile.protocol == VpnProtocol.hysteria2 ||
+            profile.protocol == VpnProtocol.tuic);
 
     final List<String> directDomains = _dedupeStrings(<String>[
       ...bypassPolicy.directDomains,
@@ -113,12 +117,18 @@ class SingboxDnsBuilder {
       'strategy': resolvedRemoteStrategy,
     });
     if (enableDohFallback) {
-      servers.add(<String, Object?>{
+      final Map<String, Object?> fallbackServer = <String, Object?>{
         'tag': 'dns-remote-fallback',
         'address': dohFallbackAddress,
-        'detour': profile.tag,
+        'detour': preferDirectDohFallback ? 'direct' : profile.tag,
         'strategy': resolvedRemoteStrategy,
-      });
+      };
+      if (preferDirectDohFallback &&
+          _requiresAddressResolver(dohFallbackAddress)) {
+        fallbackServer['address_resolver'] = 'dns-direct';
+        fallbackServer['address_strategy'] = resolvedDirectStrategy;
+      }
+      servers.add(fallbackServer);
     }
     servers.add(<String, Object?>{
       'tag': 'dns-direct',
@@ -131,7 +141,7 @@ class SingboxDnsBuilder {
       'servers': servers,
       'strategy': resolvedRemoteStrategy,
       'rules': rules,
-      'final': 'dns-remote',
+      'final': preferDirectDohFallback ? 'dns-remote-fallback' : 'dns-remote',
       'independent_cache': true,
     };
     if (settings.dns.enableFakeIp) {
@@ -167,6 +177,23 @@ class SingboxDnsBuilder {
     return normalized.startsWith('https://') ||
         normalized.startsWith('h3://') ||
         normalized.startsWith('tls://');
+  }
+
+  bool _requiresAddressResolver(String address) {
+    final Uri? uri = Uri.tryParse(address.trim());
+    final String host = uri?.host.trim() ?? '';
+    if (host.isEmpty) {
+      return false;
+    }
+    // Literal IPv4 / IPv6 endpoints can be dialed directly without bootstrap DNS.
+    final RegExp ipv4Pattern = RegExp(r'^\d{1,3}(?:\.\d{1,3}){3}$');
+    if (ipv4Pattern.hasMatch(host)) {
+      return false;
+    }
+    if (host.contains(':')) {
+      return false;
+    }
+    return true;
   }
 
   List<String> _dedupeStrings(List<String> input) {

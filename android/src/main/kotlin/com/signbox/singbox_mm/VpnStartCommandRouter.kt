@@ -5,12 +5,17 @@ internal object VpnStartCommandRouter {
         intentAction: String?,
         intentConfigPath: String?,
         currentConfigPath: String?,
-        persistedConfigPath: String?,
+        persistedRuntimeState: PersistedRuntimeState?,
         hasRunningCore: Boolean,
         connectedDetail: String?,
         actionStop: String,
         actionRestart: String,
         actionStart: String,
+        statePreparing: String,
+        stateConnecting: String,
+        stateConnected: String,
+        stateDisconnected: String,
+        stoppedByUserError: String,
         statusStarting: String,
         statusRestarting: String,
         statusRestoring: String,
@@ -48,8 +53,18 @@ internal object VpnStartCommandRouter {
                     return startRedeliverIntent
                 }
 
-                val recoveredConfigPath = currentConfigPath ?: persistedConfigPath
-                if (!recoveredConfigPath.isNullOrBlank()) {
+                val recoveredConfigPath = currentConfigPath ?: persistedRuntimeState?.configPath
+                if (
+                    !recoveredConfigPath.isNullOrBlank() &&
+                    shouldRestorePersistedSession(
+                        snapshot = persistedRuntimeState,
+                        statePreparing = statePreparing,
+                        stateConnecting = stateConnecting,
+                        stateConnected = stateConnected,
+                        stateDisconnected = stateDisconnected,
+                        stoppedByUserError = stoppedByUserError,
+                    )
+                ) {
                     showForeground(statusRestoring, null)
                     scheduleStart(recoveredConfigPath)
                     return startRedeliverIntent
@@ -59,5 +74,30 @@ internal object VpnStartCommandRouter {
                 return startNotSticky
             }
         }
+    }
+
+    private fun shouldRestorePersistedSession(
+        snapshot: PersistedRuntimeState?,
+        statePreparing: String,
+        stateConnecting: String,
+        stateConnected: String,
+        stateDisconnected: String,
+        stoppedByUserError: String,
+    ): Boolean {
+        if (snapshot == null) {
+            return true
+        }
+
+        if (snapshot.error == stoppedByUserError) {
+            return false
+        }
+
+        if (snapshot.state == stateDisconnected) {
+            return false
+        }
+
+        return snapshot.state == statePreparing ||
+            snapshot.state == stateConnecting ||
+            snapshot.state == stateConnected
     }
 }

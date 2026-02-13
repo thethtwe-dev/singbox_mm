@@ -34,6 +34,12 @@ internal class VpnServiceControlGraph(
     private val actionScheduler: VpnServiceActionScheduler by lazy {
         VpnServiceActionScheduler(
             worker = worker,
+            stopCoreUserInitiated = {
+                coreServiceCoordinator.stop(
+                    emitDisconnected = true,
+                    disconnectError = SignboxLibboxServiceContract.ERROR_STOPPED_BY_USER,
+                )
+            },
             stopCore = { emitDisconnected -> coreServiceCoordinator.stop(emitDisconnected) },
             startCore = { configPath -> coreServiceCoordinator.start(configPath) },
             publishError = { message ->
@@ -114,8 +120,8 @@ internal class VpnServiceControlGraph(
             worker = worker,
             runtimeStateBridge = runtimeStateBridge,
             trafficMonitor = trafficMonitor,
-            readPersistedConfigPath = {
-                SignboxLibboxServiceContract.readPersistedRuntimeState(service)?.configPath
+            readPersistedRuntimeState = {
+                SignboxLibboxServiceContract.readPersistedRuntimeState(service)
             },
             stopForegroundFlag = VpnService.STOP_FOREGROUND_REMOVE,
             startNotSticky = VpnService.START_NOT_STICKY,

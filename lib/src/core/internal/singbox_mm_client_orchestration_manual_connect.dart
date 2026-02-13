@@ -19,6 +19,7 @@ Future<ManualConnectResult> _connectManualProfileInternal(
     requestPermission: requestPermission,
   );
   await client.start();
+  await _rememberEndpointForCurrentNetworkInternal(client, profile);
   return ManualConnectResult(profile: profile, appliedConfig: config);
 }
 
@@ -58,11 +59,15 @@ Future<ManualConnectResult> _connectManualWithPresetInternal(
   required bool requestPermission,
 }) {
   final GfwPresetPack resolvedPreset = preset ?? GfwPresetPack.balanced();
-  return client.connectManualProfile(
+  client._activeGfwPresetMode = resolvedPreset.mode;
+  _assertPresetProfileAllowedInternal(
     profile: profile,
-    bypassPolicy: resolvedPreset.bypassPolicy,
-    throttlePolicy: resolvedPreset.throttlePolicy,
-    featureSettings: resolvedPreset.featureSettings,
+    mode: resolvedPreset.mode,
+  );
+  return _connectManualProfileWithPresetPoolInternal(
+    client,
+    profile: profile,
+    preset: resolvedPreset,
     requestPermission: requestPermission,
   );
 }
@@ -76,13 +81,48 @@ Future<ManualConnectResult> _connectManualConfigLinkWithPresetInternal(
   required bool requestPermission,
 }) {
   final GfwPresetPack resolvedPreset = preset ?? GfwPresetPack.balanced();
-  return client.connectManualConfigLink(
-    configLink: configLink,
+  client._activeGfwPresetMode = resolvedPreset.mode;
+  final ParsedVpnConfig parsed = client.parseConfigLink(
+    configLink,
     fallbackTag: fallbackTag,
     sbmmPassphrase: sbmmPassphrase,
-    bypassPolicy: resolvedPreset.bypassPolicy,
-    throttlePolicy: resolvedPreset.throttlePolicy,
-    featureSettings: resolvedPreset.featureSettings,
+  );
+  _assertPresetProfileAllowedInternal(
+    profile: parsed.profile,
+    mode: resolvedPreset.mode,
+  );
+  return _connectManualProfileWithPresetPoolInternal(
+    client,
+    profile: parsed.profile,
+    preset: resolvedPreset,
+    requestPermission: requestPermission,
+  ).then(
+    (ManualConnectResult result) => ManualConnectResult(
+      profile: result.profile,
+      appliedConfig: result.appliedConfig,
+      warnings: parsed.warnings,
+    ),
+  );
+}
+
+Future<ManualConnectResult> _connectManualProfileWithPresetPoolInternal(
+  SignboxVpn client, {
+  required VpnProfile profile,
+  required GfwPresetPack preset,
+  required bool requestPermission,
+}) async {
+  final Map<String, Object?> config = await client.applyEndpointPool(
+    profiles: <VpnProfile>[profile],
+    options: preset.endpointPoolOptions,
+    bypassPolicy: preset.bypassPolicy,
+    throttlePolicy: preset.throttlePolicy,
+    featureSettings: preset.featureSettings,
+  );
+  await _maybeRequestPermissionsInternal(
+    client,
     requestPermission: requestPermission,
   );
+  await client.start();
+  await _rememberEndpointForCurrentNetworkInternal(client, profile);
+  return ManualConnectResult(profile: profile, appliedConfig: config);
 }

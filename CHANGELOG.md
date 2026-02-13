@@ -1,4 +1,4 @@
-## Unreleased
+## 0.1.2
 
 - Improved endpoint-pool ping throughput with bounded parallel probing
   (up to 4 concurrent workers) while preserving deterministic result order.

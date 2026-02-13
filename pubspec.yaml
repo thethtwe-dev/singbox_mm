@@ -1,6 +1,6 @@
 name: singbox_mm
 description: "Flutter VPN plugin with sing-box runtime bridge, routing presets, and anti-throttling config builder."
-version: 0.1.1
+version: 0.1.2
 homepage: https://github.com/thethtwe-dev/singbox_mm
 repository: https://github.com/thethtwe-dev/singbox_mm
 issue_tracker: https://github.com/thethtwe-dev/singbox_mm/issues

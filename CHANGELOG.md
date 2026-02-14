@@ -1,3 +1,11 @@
+## 0.1.3
+
+- Improved Android native ping reliability by adding a hard timeout wrapper,
+  preventing occasional long stalls during DNS/socket connect checks.
+- Refined Android foreground notification text:
+  title now shows profile label directly and traffic content uses compact
+  `↑ / ↓` speed indicators.
+
 ## 0.1.2
 
 - Improved endpoint-pool ping throughput with bounded parallel probing

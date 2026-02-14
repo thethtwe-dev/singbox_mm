@@ -4,6 +4,10 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 internal class PluginMethodOperations(
     private val executor: ExecutorService,
@@ -88,22 +92,13 @@ internal class PluginMethodOperations(
                     return@execute
                 }
 
-                val startedAt = System.nanoTime()
-                val pingResult = runCatching {
-                    Socket().use { socket ->
-                        socket.connect(InetSocketAddress(host, port), timeoutMs)
-                    }
-                    val latencyMs = ((System.nanoTime() - startedAt) / 1_000_000L).toInt()
-                    mapOf(
-                        "ok" to true,
-                        "latencyMs" to latencyMs,
-                    )
-                }.getOrElse { error ->
-                    mapOf(
-                        "ok" to false,
-                        "error" to (error.message ?: "Connection failed"),
-                    )
-                }
+                val hardTimeoutMs = timeoutMs.toLong() + DNS_TIMEOUT_GRACE_MS
+                val pingResult = runPingWithHardTimeout(
+                    host = host,
+                    port = port,
+                    timeoutMs = timeoutMs,
+                    hardTimeoutMs = hardTimeoutMs,
+                )
 
                 postSuccess(result, pingResult)
             } catch (error: Throwable) {
@@ -120,5 +115,62 @@ internal class PluginMethodOperations(
 
     companion object {
         private const val DEFAULT_TIMEOUT_MS = 3000
+        private const val DNS_TIMEOUT_GRACE_MS = 1200L
+        private val pingThreadCounter = AtomicInteger(1)
+        private val pingExecutor: ExecutorService = Executors.newCachedThreadPool(
+            object : ThreadFactory {
+                override fun newThread(runnable: Runnable): Thread {
+                    return Thread(
+                        runnable,
+                        "signbox-mm-ping-${pingThreadCounter.getAndIncrement()}",
+                    ).apply {
+                        isDaemon = true
+                    }
+                }
+            },
+        )
+    }
+
+    private fun runPingWithHardTimeout(
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+        hardTimeoutMs: Long,
+    ): Map<String, Any?> {
+        val task = pingExecutor.submit<Map<String, Any?>> {
+            runCatching {
+                executePing(host = host, port = port, timeoutMs = timeoutMs)
+            }.getOrElse { error ->
+                mapOf(
+                    "ok" to false,
+                    "error" to (error.message ?: "Connection failed"),
+                )
+            }
+        }
+        return try {
+            task.get(hardTimeoutMs, TimeUnit.MILLISECONDS)
+        } catch (_: Throwable) {
+            task.cancel(true)
+            mapOf(
+                "ok" to false,
+                "error" to "Connection timed out",
+            )
+        }
+    }
+
+    private fun executePing(
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+    ): Map<String, Any?> {
+        val startedAt = System.nanoTime()
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(host, port), timeoutMs)
+        }
+        val latencyMs = ((System.nanoTime() - startedAt) / 1_000_000L).toInt()
+        return mapOf(
+            "ok" to true,
+            "latencyMs" to latencyMs,
+        )
     }
 }

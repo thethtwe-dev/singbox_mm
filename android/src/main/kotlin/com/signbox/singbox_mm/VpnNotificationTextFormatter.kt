@@ -6,8 +6,7 @@ internal object VpnNotificationTextFormatter {
     private val units = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
 
     fun buildTitle(profileLabel: String?, defaultLabel: String): String {
-        val resolvedLabel = profileLabel?.takeIf { it.isNotBlank() } ?: defaultLabel
-        return "Singbox VPN · $resolvedLabel"
+        return profileLabel?.takeIf { it.isNotBlank() } ?: defaultLabel
     }
 
     fun buildContent(
@@ -18,8 +17,8 @@ internal object VpnNotificationTextFormatter {
         return if (trafficSnapshot == null) {
             if (detail.isNullOrBlank()) status else "$status • $detail"
         } else {
-            "Up ${formatBytes(trafficSnapshot.uplinkRateBytesPerSecond)}/s • " +
-                "Down ${formatBytes(trafficSnapshot.downlinkRateBytesPerSecond)}/s"
+            "↑ ${formatBytes(trafficSnapshot.uplinkRateBytesPerSecond)}/s • " +
+                "↓ ${formatBytes(trafficSnapshot.downlinkRateBytesPerSecond)}/s"
         }
     }
 

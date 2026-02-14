@@ -5,6 +5,9 @@
 - Refined Android foreground notification text:
   title now shows profile label directly and traffic content uses compact
   `↑ / ↓` speed indicators.
+- Added Android native page-size verification script
+  (`tool/check_android_page_size.sh`) and integrated it into
+  `tool/quality_gate.sh` and `tool/fetch_singbox_libbox_android.sh`.
 
 ## 0.1.2
 

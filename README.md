@@ -582,6 +582,22 @@ Recommended distribution strategy:
 - Direct APK distribution: build per-ABI artifacts (`flutter build apk --release --split-per-abi`).
 - If your distribution never targets emulators, you can exclude `x86`/`x86_64` ABIs in the host app release config.
 
+### Android 16 KB Page-Size Support
+
+This package includes native alignment verification for Android page-size compatibility:
+- 64-bit ABIs (`arm64-v8a`, `x86_64`) require minimum `LOAD` alignment `2**14` (16 KB).
+- 32-bit ABIs (`armeabi-v7a`, `x86`) require minimum `LOAD` alignment `2**12` (4 KB baseline).
+
+Run:
+
+```bash
+./tool/check_android_page_size.sh
+```
+
+This check is also integrated into:
+- `./tool/quality_gate.sh`
+- `./tool/fetch_singbox_libbox_android.sh`
+
 ### Android Manifest Requirements
 
 Your host app (or plugin merged manifest) must include:

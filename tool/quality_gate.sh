@@ -13,6 +13,9 @@ flutter analyze
 echo "[quality] flutter test"
 flutter test
 
+echo "[quality] check android native page-size alignment"
+./tool/check_android_page_size.sh
+
 echo "[quality] flutter pub outdated"
 OUTDATED_OUTPUT="$(flutter pub outdated)"
 echo "$OUTDATED_OUTPUT"

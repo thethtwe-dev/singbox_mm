@@ -92,6 +92,9 @@ copy_abi "armeabi-v7a"
 copy_abi "x86"
 copy_abi "x86_64"
 
+echo "Verifying Android native page-size alignment..."
+"$ROOT_DIR/tool/check_android_page_size.sh"
+
 echo "Done."
 echo "- Android core classes synced to android/libs/libbox.jar"
 echo "- Plugin JNI libs updated under android/src/main/jniLibs/<abi>/libbox.so"

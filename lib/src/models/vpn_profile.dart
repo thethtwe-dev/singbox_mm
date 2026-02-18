@@ -88,6 +88,7 @@ class TlsOptions {
     this.utlsFingerprint = 'chrome',
     this.realityPublicKey,
     this.realityShortId,
+    this.realitySpiderX,
     this.alpn = const <String>['h2', 'http/1.1'],
   });
 
@@ -108,6 +109,9 @@ class TlsOptions {
 
   /// Reality short ID.
   final String? realityShortId;
+
+  /// Reality spider path.
+  final String? realitySpiderX;
 
   /// ALPN list for TLS handshake.
   final List<String> alpn;
@@ -144,6 +148,8 @@ class TlsOptions {
         'public_key': realityPublicKey,
         if (realityShortId != null && realityShortId!.isNotEmpty)
           'short_id': realityShortId,
+        if (realitySpiderX != null && realitySpiderX!.isNotEmpty)
+          'spider_x': realitySpiderX,
       };
     }
 
@@ -167,6 +173,8 @@ class VpnProfile {
     this.websocketPath,
     this.websocketHeaders = const <String, String>{},
     this.grpcServiceName,
+    this.maxEarlyData = 0,
+    this.earlyDataHeaderName,
     this.tls = const TlsOptions(),
     this.extra = const <String, Object?>{},
   }) : assert(tag != ''),
@@ -184,6 +192,8 @@ class VpnProfile {
     String? websocketPath,
     Map<String, String> websocketHeaders = const <String, String>{},
     String? grpcServiceName,
+    int maxEarlyData = 0,
+    String? earlyDataHeaderName,
     TlsOptions tls = const TlsOptions(),
     Map<String, Object?> extra = const <String, Object?>{},
   }) {
@@ -198,6 +208,8 @@ class VpnProfile {
       websocketPath: websocketPath,
       websocketHeaders: websocketHeaders,
       grpcServiceName: grpcServiceName,
+      maxEarlyData: maxEarlyData,
+      earlyDataHeaderName: earlyDataHeaderName,
       tls: tls,
       extra: extra,
     );
@@ -213,6 +225,8 @@ class VpnProfile {
     String? websocketPath,
     Map<String, String> websocketHeaders = const <String, String>{},
     String? grpcServiceName,
+    int maxEarlyData = 0,
+    String? earlyDataHeaderName,
     TlsOptions tls = const TlsOptions(),
     Map<String, Object?> extra = const <String, Object?>{},
   }) {
@@ -226,6 +240,8 @@ class VpnProfile {
       websocketPath: websocketPath,
       websocketHeaders: websocketHeaders,
       grpcServiceName: grpcServiceName,
+      maxEarlyData: maxEarlyData,
+      earlyDataHeaderName: earlyDataHeaderName,
       tls: tls,
       extra: extra,
     );
@@ -241,6 +257,8 @@ class VpnProfile {
     String? websocketPath,
     Map<String, String> websocketHeaders = const <String, String>{},
     String? grpcServiceName,
+    int maxEarlyData = 0,
+    String? earlyDataHeaderName,
     TlsOptions tls = const TlsOptions(),
     Map<String, Object?> extra = const <String, Object?>{},
   }) {
@@ -254,6 +272,8 @@ class VpnProfile {
       websocketPath: websocketPath,
       websocketHeaders: websocketHeaders,
       grpcServiceName: grpcServiceName,
+      maxEarlyData: maxEarlyData,
+      earlyDataHeaderName: earlyDataHeaderName,
       tls: tls,
       extra: extra,
     );
@@ -270,6 +290,8 @@ class VpnProfile {
     String? websocketPath,
     Map<String, String> websocketHeaders = const <String, String>{},
     String? grpcServiceName,
+    int maxEarlyData = 0,
+    String? earlyDataHeaderName,
     TlsOptions tls = const TlsOptions(enabled: false),
     Map<String, Object?> extra = const <String, Object?>{},
   }) {
@@ -284,6 +306,8 @@ class VpnProfile {
       websocketPath: websocketPath,
       websocketHeaders: websocketHeaders,
       grpcServiceName: grpcServiceName,
+      maxEarlyData: maxEarlyData,
+      earlyDataHeaderName: earlyDataHeaderName,
       tls: tls,
       extra: extra,
     );
@@ -485,6 +509,12 @@ class VpnProfile {
 
   /// gRPC service name.
   final String? grpcServiceName;
+
+  /// Max WebSocket early-data bytes. `0` disables early-data.
+  final int maxEarlyData;
+
+  /// Optional WebSocket early-data header name.
+  final String? earlyDataHeaderName;
 
   /// TLS options.
   final TlsOptions tls;
@@ -711,23 +741,33 @@ class VpnProfile {
         final Map<String, String> headers = _normalizeWsHeaders(
           websocketHeaders,
         );
+        final int safeEarlyData = maxEarlyData < 0 ? 0 : maxEarlyData;
+        final String? earlyHeader = _normalizeHeaderToken(earlyDataHeaderName);
         return <String, Object?>{
           'type': 'ws',
           'path': wsPath,
-          'max_early_data': 0,
+          'max_early_data': safeEarlyData,
+          if (safeEarlyData > 0 && earlyHeader != null)
+            'early_data_header_name': earlyHeader,
           if (headers.isNotEmpty) 'headers': headers,
         };
       case VpnTransport.grpc:
+        final String? authority = _extractGrpcAuthority(websocketHeaders);
         return <String, Object?>{
           'type': 'grpc',
           'service_name': grpcServiceName ?? 'grpc',
+          if (authority case final String resolvedAuthority)
+            'authority': resolvedAuthority,
         };
       case VpnTransport.quic:
         return <String, Object?>{'type': 'quic'};
       case VpnTransport.httpUpgrade:
+        final String path = _normalizeWsTransportPath(websocketPath);
+        final String? host = _extractHttpUpgradeHost(websocketHeaders);
         return <String, Object?>{
           'type': 'httpupgrade',
-          'path': websocketPath ?? '/',
+          'path': path,
+          if (host case final String resolvedHost) 'host': resolvedHost,
         };
     }
   }
@@ -758,12 +798,14 @@ class VpnProfile {
 
     final List<String> keptPairs = <String>[];
     for (final String pair in rawQuery.split('&')) {
-      if (pair.isEmpty) {
+      final String trimmedPair = pair.trim();
+      if (trimmedPair.isEmpty) {
         continue;
       }
-      final int split = pair.indexOf('=');
-      final String keyRaw = split < 0 ? pair : pair.substring(0, split);
-      final String valueRaw = split < 0 ? '' : pair.substring(split + 1);
+      final int split = trimmedPair.indexOf('=');
+      final String keyRaw = split < 0
+          ? trimmedPair
+          : trimmedPair.substring(0, split);
       final String key = Uri.decodeQueryComponent(keyRaw).trim();
       if (key.isEmpty) {
         continue;
@@ -772,11 +814,7 @@ class VpnProfile {
       if (lowered == 'ed' || lowered == 'eh') {
         continue;
       }
-
-      final String value = Uri.decodeQueryComponent(valueRaw).trim();
-      keptPairs.add(
-        '${Uri.encodeQueryComponent(key)}=${Uri.encodeQueryComponent(value)}',
-      );
+      keptPairs.add(trimmedPair);
     }
     if (keptPairs.isEmpty) {
       return basePath;
@@ -790,18 +828,42 @@ class VpnProfile {
     }
     final Map<String, String> headers = <String, String>{};
     raw.forEach((String key, String value) {
-      final String normalizedKey = key
-          .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
-          .trim();
-      final String normalizedValue = value
-          .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
-          .trim();
-      if (normalizedKey.isEmpty || normalizedValue.isEmpty) {
+      final String? normalizedKey = _normalizeHeaderToken(key);
+      final String? normalizedValue = _normalizeHeaderToken(value);
+      if (normalizedKey == null || normalizedValue == null) {
         return;
       }
       headers[normalizedKey] = normalizedValue;
     });
     return headers;
+  }
+
+  static String? _extractHttpUpgradeHost(Map<String, String> headers) {
+    final String? host =
+        headers['Host'] ??
+        headers['host'] ??
+        headers[':authority'] ??
+        headers['authority'];
+    return _normalizeHeaderToken(host);
+  }
+
+  static String? _extractGrpcAuthority(Map<String, String> headers) {
+    final String? authority =
+        headers[':authority'] ??
+        headers['authority'] ??
+        headers['Host'] ??
+        headers['host'];
+    return _normalizeHeaderToken(authority);
+  }
+
+  static String? _normalizeHeaderToken(String? raw) {
+    if (raw == null) {
+      return null;
+    }
+    final String normalized = raw
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
+        .trim();
+    return normalized.isEmpty ? null : normalized;
   }
 
   static String _requiredString(String? value, String message) {

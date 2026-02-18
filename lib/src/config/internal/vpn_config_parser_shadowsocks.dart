@@ -59,15 +59,15 @@ _ParseOutput _parseShadowsocksConfig(
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
-    grpcServiceName: VpnConfigParser._firstValue(query, const <String>[
-      'servicename',
-      'service_name',
-    ]),
+    grpcServiceName: parser._extractGrpcServiceName(query),
+    maxEarlyData: parser._extractWsMaxEarlyData(query),
+    earlyDataHeaderName: parser._extractWsEarlyDataHeaderName(query),
     tls: parser._buildTlsOptions(
       query,
-      fallbackServerName: parsed.host,
+      fallbackServerName: wsHost ?? parsed.host,
       defaultEnabled: false,
-      defaultAlpn: transport == VpnTransport.ws
+      defaultAlpn:
+          transport == VpnTransport.ws || transport == VpnTransport.httpUpgrade
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),

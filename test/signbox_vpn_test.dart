@@ -670,6 +670,157 @@ void main() {
     },
   );
 
+  test('vmess xhttp link maps to httpupgrade transport without tls', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    final String vmessJson = jsonEncode(<String, String>{
+      'v': '2',
+      'ps': 'vmess-xhttp',
+      'add': 'app.example.com',
+      'port': '80',
+      'id': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      'net': 'xhttp',
+      'path': '/QmCus87aYKFEQyuUX7rUfHXH4',
+      'host': 'app.example.com',
+      'tls': '',
+      'security': 'none',
+      'type': 'none',
+    });
+    final String vmessLink = 'vmess://${base64.encode(utf8.encode(vmessJson))}';
+
+    await vpn.connectManualConfigLink(configLink: vmessLink);
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'vmess-xhttp',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> transport =
+        (outbound['transport'] as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+
+    expect(outbound['type'], 'vmess');
+    expect(outbound['server'], 'app.example.com');
+    expect(outbound['server_port'], 80);
+    expect(outbound.containsKey('tls'), isFalse);
+
+    expect(transport['type'], 'httpupgrade');
+    expect(transport['path'], '/QmCus87aYKFEQyuUX7rUfHXH4');
+    expect(transport['host'], 'app.example.com');
+  });
+
+  test('grpc link maps authority and service name aliases', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.connectManualConfigLink(
+      configLink:
+          'vless://11111111-2222-3333-4444-555555555555@edge.example.com:443?type=grpc&path=%2Fgrpc-api&authority=grpc.edge.example.com&security=tls&sni=edge.example.com#grpc-node',
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'grpc-node',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> transport =
+        (outbound['transport'] as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+
+    expect(transport['type'], 'grpc');
+    expect(transport['service_name'], 'grpc-api');
+    expect(transport['authority'], 'grpc.edge.example.com');
+  });
+
+  test(
+    'ws link honors explicit early-data override while stripping path hints',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.connectManualConfigLink(
+        configLink:
+            'vless://11111111-2222-3333-4444-555555555555@edge.example.com:443?type=ws&path=%2Fws%3Fed%3D2048%26foo%3Dbar%2520baz&max_early_data=4096&early_data_header_name=Sec-WebSocket-Protocol&security=tls&sni=edge.example.com#ws-ed-node',
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'ws-ed-node',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+
+      expect(transport['type'], 'ws');
+      expect(transport['path'], '/ws?foo=bar%20baz');
+      expect(transport['max_early_data'], 4096);
+      expect(transport['early_data_header_name'], 'Sec-WebSocket-Protocol');
+    },
+  );
+
+  test('reality link maps spider_x into tls.reality block', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.connectManualConfigLink(
+      configLink:
+          'vless://11111111-2222-3333-4444-555555555555@reality.example.com:443?type=tcp&security=reality&pbk=example-public-key&sid=abcd1234&spx=%2Fspider&fingerprint=firefox#reality-spx',
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'reality-spx',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> tls = (outbound['tls'] as Map<dynamic, dynamic>)
+        .cast<String, dynamic>();
+    final Map<String, dynamic> reality =
+        (tls['reality'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+
+    expect((tls['utls'] as Map<dynamic, dynamic>)['fingerprint'], 'firefox');
+    expect(reality['public_key'], 'example-public-key');
+    expect(reality['short_id'], 'abcd1234');
+    expect(reality['spider_x'], '/spider');
+  });
+
   test('dns provider preset maps to expected resolver endpoints', () async {
     final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
     SignboxVpnPlatform.instance = fakePlatform;

@@ -148,13 +148,11 @@ class SingboxConfigBuilder {
         break;
     }
 
-    // When transport is WebSocket, sing-box's uTLS fingerprint overrides the
-    // explicit `alpn` field during the TLS handshake (e.g. Chrome's fingerprint
-    // includes `h2`). The CDN then negotiates HTTP/2, which breaks WebSocket
-    // upgrades (WebSocket requires HTTP/1.1). Strip `utls` from the TLS block
-    // when the profile explicitly requests http/1.1-only ALPN so that sing-box
-    // honours the explicit ALPN list instead of the fingerprint's built-in one.
-    if (profile.transport == VpnTransport.ws) {
+    // For WS/HTTP upgrade, uTLS fingerprints can force HTTP/2 ALPN (e.g.
+    // "chrome"), which breaks HTTP/1.1 upgrade flows. Strip uTLS when the
+    // profile explicitly pins ALPN to http/1.1-only.
+    if (profile.transport == VpnTransport.ws ||
+        profile.transport == VpnTransport.httpUpgrade) {
       final bool http11Only =
           profile.tls.alpn.length == 1 &&
           profile.tls.alpn.first.toLowerCase() == 'http/1.1';

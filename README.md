@@ -43,7 +43,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  singbox_mm: ^0.1.6
+  singbox_mm: ^0.1.7
 ```
 
 For local development in a monorepo, you can still use a path dependency:

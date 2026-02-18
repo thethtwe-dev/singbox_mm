@@ -55,7 +55,7 @@ void main() {
       '&sni=example.com'
       '#vless-ws',
     );
-    expect(vlessParsed.profile.websocketPath, '/ws?foo=bar+baz');
+    expect(vlessParsed.profile.websocketPath, '/ws?foo=bar%20baz');
     expect(
       vlessParsed.profile.websocketHeaders['Host'],
       'vless-host.example.com',
@@ -120,6 +120,72 @@ void main() {
     expect(parsed.profile.tls.alpn, isEmpty);
   });
 
+  test('parse ws link falls back Host header from sni when host is absent', () {
+    final ParsedVpnConfig parsed = parser.parse(
+      'vless://11111111-2222-3333-4444-555555555555@198.51.100.10:443'
+      '?type=ws'
+      '&path=%2Fws'
+      '&security=tls'
+      '&sni=cdn.example.com'
+      '#vless-sni-host-fallback',
+    );
+
+    expect(parsed.profile.websocketHeaders['Host'], 'cdn.example.com');
+    expect(parsed.profile.tls.serverName, 'cdn.example.com');
+  });
+
+  test('parse grpc link maps authority and path alias service name', () {
+    final ParsedVpnConfig parsed = parser.parse(
+      'vless://11111111-2222-3333-4444-555555555555@edge.example.com:443'
+      '?type=grpc'
+      '&path=%2Fgrpc-service'
+      '&authority=grpc.edge.example.com'
+      '&security=tls'
+      '&sni=edge.example.com'
+      '#vless-grpc',
+    );
+
+    expect(parsed.profile.transport, VpnTransport.grpc);
+    expect(parsed.profile.grpcServiceName, 'grpc-service');
+    expect(parsed.profile.websocketHeaders['Host'], 'grpc.edge.example.com');
+  });
+
+  test('parse vless reality aliases including fingerprint and spx', () {
+    final ParsedVpnConfig parsed = parser.parse(
+      'vless://11111111-2222-3333-4444-555555555555@reality.example.com:443'
+      '?type=tcp'
+      '&security=reality'
+      '&fingerprint=firefox'
+      '&pbk=example-public-key'
+      '&shortId=abcd1234'
+      '&spx=%2Fspider'
+      '#reality-node',
+    );
+
+    expect(parsed.profile.tls.enabled, isTrue);
+    expect(parsed.profile.tls.utlsFingerprint, 'firefox');
+    expect(parsed.profile.tls.realityPublicKey, 'example-public-key');
+    expect(parsed.profile.tls.realityShortId, 'abcd1234');
+    expect(parsed.profile.tls.realitySpiderX, '/spider');
+  });
+
+  test('parse ws explicit early-data params but default remains safe', () {
+    final ParsedVpnConfig parsed = parser.parse(
+      'vmess://11111111-2222-3333-4444-555555555555@example.com:443'
+      '?type=ws'
+      '&path=%2Fws%3Fed%3D2048'
+      '&max_early_data=4096'
+      '&early_data_header_name=Sec-WebSocket-Protocol'
+      '&security=tls'
+      '&sni=example.com'
+      '#vmess-ws-ed',
+    );
+
+    expect(parsed.profile.websocketPath, '/ws');
+    expect(parsed.profile.maxEarlyData, 4096);
+    expect(parsed.profile.earlyDataHeaderName, 'Sec-WebSocket-Protocol');
+  });
+
   test('parse sbmm wrapped link with passphrase', () {
     const String raw =
         'vless://11111111-2222-3333-4444-555555555555@203.0.113.10:29485?type=tcp&encryption=none&security=none#demo-node';
@@ -174,6 +240,50 @@ void main() {
     expect(parsed.profile.websocketHeaders['Host'], 'cdn.example.com');
     expect(parsed.profile.tls.enabled, isTrue);
     expect(parsed.profile.tls.serverName, 'example.com');
+  });
+
+  test('parse vmess xhttp base64 link with non-tls port 80', () {
+    final String vmessJson = jsonEncode(<String, String>{
+      'v': '2',
+      'ps': 'vmess-xhttp',
+      'add': 'app.example.com',
+      'port': '80',
+      'id': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      'net': 'xhttp',
+      'path': '/QmCus87aYKFEQyuUX7rUfHXH4',
+      'host': 'app.example.com',
+      'tls': '',
+      'security': 'none',
+      'type': 'none',
+    });
+    final String vmessPayload = base64.encode(utf8.encode(vmessJson));
+    final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
+
+    expect(parsed.profile.protocol, VpnProtocol.vmess);
+    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.server, 'app.example.com');
+    expect(parsed.profile.serverPort, 80);
+    expect(parsed.profile.websocketPath, '/QmCus87aYKFEQyuUX7rUfHXH4');
+    expect(parsed.profile.websocketHeaders['Host'], 'app.example.com');
+    expect(parsed.profile.tls.enabled, isFalse);
+  });
+
+  test('parse trojan xhttp link with plain http transport', () {
+    final ParsedVpnConfig parsed = parser.parse(
+      'trojan://secret-pass@app.example.com:80'
+      '?type=xhttp'
+      '&path=%2Fupgrade'
+      '&host=app.example.com'
+      '&security=none'
+      '#trojan-xhttp',
+    );
+
+    expect(parsed.profile.protocol, VpnProtocol.trojan);
+    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.serverPort, 80);
+    expect(parsed.profile.websocketPath, '/upgrade');
+    expect(parsed.profile.websocketHeaders['Host'], 'app.example.com');
+    expect(parsed.profile.tls.enabled, isFalse);
   });
 
   test('parse shadowsocks link', () {

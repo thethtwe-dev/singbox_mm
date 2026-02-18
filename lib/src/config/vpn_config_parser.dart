@@ -294,12 +294,14 @@ class VpnConfigParser {
 
     final List<String> keptPairs = <String>[];
     for (final String pair in rawQuery.split('&')) {
-      if (pair.isEmpty) {
+      final String trimmedPair = pair.trim();
+      if (trimmedPair.isEmpty) {
         continue;
       }
-      final int split = pair.indexOf('=');
-      final String keyRaw = split < 0 ? pair : pair.substring(0, split);
-      final String valueRaw = split < 0 ? '' : pair.substring(split + 1);
+      final int split = trimmedPair.indexOf('=');
+      final String keyRaw = split < 0
+          ? trimmedPair
+          : trimmedPair.substring(0, split);
       final String key = _tryDecodeComponent(keyRaw)?.trim() ?? '';
       if (key.isEmpty) {
         continue;
@@ -308,11 +310,7 @@ class VpnConfigParser {
       if (lowered == 'ed' || lowered == 'eh') {
         continue;
       }
-
-      final String value = (_tryDecodeComponent(valueRaw) ?? valueRaw).trim();
-      keptPairs.add(
-        '${Uri.encodeQueryComponent(key)}=${Uri.encodeQueryComponent(value)}',
-      );
+      keptPairs.add(trimmedPair);
     }
     if (keptPairs.isEmpty) {
       return basePath;
@@ -340,6 +338,14 @@ class VpnConfigParser {
       'http-headers',
     ]);
     if (headersRaw == null || headersRaw.trim().isEmpty) {
+      final String? sniFallback = _firstValue(query, const <String>[
+        'sni',
+        'servername',
+        'server_name',
+      ]);
+      if (sniFallback != null && sniFallback.trim().isNotEmpty) {
+        return sniFallback.trim();
+      }
       return null;
     }
 
@@ -366,9 +372,69 @@ class VpnConfigParser {
     }
 
     if (relaxed != headersRaw) {
-      return _extractHostFromHeaderPairs(relaxed);
+      final String? relaxedPairs = _extractHostFromHeaderPairs(relaxed);
+      if (relaxedPairs != null) {
+        return relaxedPairs;
+      }
+    }
+    final String? sniFallback = _firstValue(query, const <String>[
+      'sni',
+      'servername',
+      'server_name',
+    ]);
+    if (sniFallback != null && sniFallback.trim().isNotEmpty) {
+      return sniFallback.trim();
     }
     return null;
+  }
+
+  String? _extractGrpcServiceName(Map<String, String> query) {
+    final String? direct = _firstValue(query, const <String>[
+      'servicename',
+      'service_name',
+      'grpc-service-name',
+      'grpc_service_name',
+      'grpcservicename',
+      'grpc_service',
+      'grpcservice',
+    ]);
+    if (direct != null && direct.trim().isNotEmpty) {
+      return direct.trim();
+    }
+
+    final String? fromPath = _extractWsPath(query);
+    if (fromPath == null || fromPath.isEmpty || fromPath == '/') {
+      return null;
+    }
+    return fromPath.startsWith('/') ? fromPath.substring(1) : fromPath;
+  }
+
+  int _extractWsMaxEarlyData(Map<String, String> query) {
+    final int? explicit = _parseInt(
+      _firstValue(query, const <String>[
+        'max_early_data',
+        'maxearlydata',
+        'max-early-data',
+        'ed',
+      ]),
+    );
+    if (explicit == null || explicit < 0) {
+      return 0;
+    }
+    return explicit;
+  }
+
+  String? _extractWsEarlyDataHeaderName(Map<String, String> query) {
+    final String? header = _firstValue(query, const <String>[
+      'early_data_header_name',
+      'early-data-header-name',
+      'eh',
+    ]);
+    if (header == null) {
+      return null;
+    }
+    final String normalized = header.trim();
+    return normalized.isEmpty ? null : normalized;
   }
 
   String? _extractHostFromHeaderMap(dynamic decoded) {
@@ -473,6 +539,7 @@ class VpnConfigParser {
       case 'http':
       case 'httpupgrade':
       case 'http-upgrade':
+      case 'xhttp':
       case 'h2':
         return VpnTransport.httpUpgrade;
       default:
@@ -540,11 +607,19 @@ class VpnConfigParser {
         'pbk',
         'publickey',
         'public_key',
+        'public-key',
       ]),
       realityShortId: _firstValue(query, const <String>[
         'sid',
         'shortid',
         'short_id',
+        'short-id',
+      ]),
+      realitySpiderX: _firstValue(query, const <String>[
+        'spx',
+        'spiderx',
+        'spider_x',
+        'spider-x',
       ]),
       alpn: explicitEmptyAlpn
           ? const <String>[]

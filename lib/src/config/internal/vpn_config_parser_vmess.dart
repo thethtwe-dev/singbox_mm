@@ -39,15 +39,15 @@ _ParseOutput _parseVmessConfig(
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
-    grpcServiceName: VpnConfigParser._firstValue(query, const <String>[
-      'servicename',
-      'service_name',
-    ]),
+    grpcServiceName: parser._extractGrpcServiceName(query),
+    maxEarlyData: parser._extractWsMaxEarlyData(query),
+    earlyDataHeaderName: parser._extractWsEarlyDataHeaderName(query),
     tls: parser._buildTlsOptions(
       query,
-      fallbackServerName: uri.host,
+      fallbackServerName: wsHost ?? uri.host,
       defaultEnabled: false,
-      defaultAlpn: transport == VpnTransport.ws
+      defaultAlpn:
+          transport == VpnTransport.ws || transport == VpnTransport.httpUpgrade
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),
@@ -140,6 +140,38 @@ _ParseOutput? _tryParseVmessJsonConfig(
       'alpn': VpnConfigParser._stringFromMap(vmessMap, const <String>['alpn'])!,
     if (VpnConfigParser._stringFromMap(vmessMap, const <String>['fp']) != null)
       'fp': VpnConfigParser._stringFromMap(vmessMap, const <String>['fp'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>[
+          'fingerprint',
+        ]) !=
+        null)
+      'fingerprint': VpnConfigParser._stringFromMap(vmessMap, const <String>[
+        'fingerprint',
+      ])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>['pbk']) != null)
+      'pbk': VpnConfigParser._stringFromMap(vmessMap, const <String>['pbk'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>['sid']) != null)
+      'sid': VpnConfigParser._stringFromMap(vmessMap, const <String>['sid'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>['spx']) != null)
+      'spx': VpnConfigParser._stringFromMap(vmessMap, const <String>['spx'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>[
+          'max_early_data',
+        ]) !=
+        null)
+      'max_early_data': VpnConfigParser._stringFromMap(vmessMap, const <String>[
+        'max_early_data',
+      ])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>['ed']) != null)
+      'ed': VpnConfigParser._stringFromMap(vmessMap, const <String>['ed'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>[
+          'early_data_header_name',
+        ]) !=
+        null)
+      'early_data_header_name': VpnConfigParser._stringFromMap(
+        vmessMap,
+        const <String>['early_data_header_name'],
+      )!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>['eh']) != null)
+      'eh': VpnConfigParser._stringFromMap(vmessMap, const <String>['eh'])!,
   };
 
   final List<String> warnings = <String>[];
@@ -166,15 +198,15 @@ _ParseOutput? _tryParseVmessJsonConfig(
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
-    grpcServiceName: VpnConfigParser._firstValue(query, const <String>[
-      'servicename',
-      'service_name',
-    ]),
+    grpcServiceName: parser._extractGrpcServiceName(query),
+    maxEarlyData: parser._extractWsMaxEarlyData(query),
+    earlyDataHeaderName: parser._extractWsEarlyDataHeaderName(query),
     tls: parser._buildTlsOptions(
       query,
-      fallbackServerName: host,
+      fallbackServerName: wsHost ?? host,
       defaultEnabled: false,
-      defaultAlpn: transport == VpnTransport.ws
+      defaultAlpn:
+          transport == VpnTransport.ws || transport == VpnTransport.httpUpgrade
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),

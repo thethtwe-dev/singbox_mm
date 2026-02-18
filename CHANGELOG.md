@@ -1,3 +1,18 @@
+## 0.1.7
+
+- Deep parser hardening release across `vless`, `vmess`, `trojan`, and `shadowsocks`.
+- Added robust `xhttp`/`httpupgrade` handling for TLS and non-TLS links (including port 80 plain HTTP cases).
+- Improved host/header alias extraction and precedence:
+  `host`, `ws_host`, `ws-host`, `authority`, `:authority`, header-map forms, with `sni` fallback when host is absent.
+- Added gRPC parser normalization helpers:
+  broader service-name aliases and path fallback; authority propagated to transport JSON.
+- Expanded modern TLS parsing:
+  `fp`/`fingerprint` aliases and Reality aliases (`pbk`, `sid`, `spx`/`spider_x`) into outbound TLS block.
+- Tightened path normalization to avoid malformed/double-encoded WS/xHTTP paths while stripping parser-only hints (`ed`, `eh`).
+- Kept safe default for WebSocket early-data (`max_early_data: 0`), with explicit override support when provided in links.
+- Extended ALPN/uTLS guard for both WS and HTTP-upgrade to reduce strict CDN handshake failures.
+- Added and updated regression tests for xHTTP, gRPC aliases, Reality fields, host fallback behavior, and early-data mapping.
+
 ## 0.1.6
 
 - Hardened WebSocket parser/config generation to reduce strict CDN `404` handshake failures.

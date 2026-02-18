@@ -43,7 +43,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  singbox_mm: ^0.1.5
+  singbox_mm: ^0.1.6
 ```
 
 For local development in a monorepo, you can still use a path dependency:
@@ -257,6 +257,11 @@ await vpn.applyConfigLink(
   ),
 );
 ```
+
+WebSocket compatibility notes:
+- Early Data is disabled by default in generated WS transport (`max_early_data: 0`).
+- `path` query hints used by some share links (`ed` / `eh`) are sanitized out to avoid strict CDN `404` upgrades.
+- For strict TLS endpoints, `alpn=none` can be used in links to produce empty ALPN (`tls.alpn=[]`).
 
 Parser coverage includes:
 - `sbmm://` (encrypted wrapper for a supported inner link)

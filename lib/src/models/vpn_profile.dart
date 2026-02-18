@@ -707,10 +707,15 @@ class VpnProfile {
       case VpnTransport.tcp:
         return <String, Object?>{'type': 'tcp'};
       case VpnTransport.ws:
+        final String wsPath = _normalizeWsTransportPath(websocketPath);
+        final Map<String, String> headers = _normalizeWsHeaders(
+          websocketHeaders,
+        );
         return <String, Object?>{
           'type': 'ws',
-          'path': websocketPath ?? '/',
-          if (websocketHeaders.isNotEmpty) 'headers': websocketHeaders,
+          'path': wsPath,
+          'max_early_data': 0,
+          if (headers.isNotEmpty) 'headers': headers,
         };
       case VpnTransport.grpc:
         return <String, Object?>{
@@ -725,6 +730,78 @@ class VpnProfile {
           'path': websocketPath ?? '/',
         };
     }
+  }
+
+  static String _normalizeWsTransportPath(String? rawPath) {
+    String path = (rawPath ?? '/').trim();
+    if (path.isEmpty) {
+      return '/';
+    }
+    path = path.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '');
+    if (!path.startsWith('/')) {
+      path = '/$path';
+    }
+    path = path.replaceFirst(RegExp(r'^/+'), '/');
+
+    final int queryIndex = path.indexOf('?');
+    if (queryIndex < 0) {
+      return path;
+    }
+
+    final String basePath = queryIndex == 0
+        ? '/'
+        : path.substring(0, queryIndex);
+    final String rawQuery = path.substring(queryIndex + 1);
+    if (rawQuery.isEmpty) {
+      return basePath;
+    }
+
+    final List<String> keptPairs = <String>[];
+    for (final String pair in rawQuery.split('&')) {
+      if (pair.isEmpty) {
+        continue;
+      }
+      final int split = pair.indexOf('=');
+      final String keyRaw = split < 0 ? pair : pair.substring(0, split);
+      final String valueRaw = split < 0 ? '' : pair.substring(split + 1);
+      final String key = Uri.decodeQueryComponent(keyRaw).trim();
+      if (key.isEmpty) {
+        continue;
+      }
+      final String lowered = key.toLowerCase();
+      if (lowered == 'ed' || lowered == 'eh') {
+        continue;
+      }
+
+      final String value = Uri.decodeQueryComponent(valueRaw).trim();
+      keptPairs.add(
+        '${Uri.encodeQueryComponent(key)}=${Uri.encodeQueryComponent(value)}',
+      );
+    }
+    if (keptPairs.isEmpty) {
+      return basePath;
+    }
+    return '$basePath?${keptPairs.join('&')}';
+  }
+
+  static Map<String, String> _normalizeWsHeaders(Map<String, String> raw) {
+    if (raw.isEmpty) {
+      return const <String, String>{};
+    }
+    final Map<String, String> headers = <String, String>{};
+    raw.forEach((String key, String value) {
+      final String normalizedKey = key
+          .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
+          .trim();
+      final String normalizedValue = value
+          .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
+          .trim();
+      if (normalizedKey.isEmpty || normalizedValue.isEmpty) {
+        return;
+      }
+      headers[normalizedKey] = normalizedValue;
+    });
+    return headers;
   }
 
   static String _requiredString(String? value, String message) {

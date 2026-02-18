@@ -575,17 +575,17 @@ void main() {
       await vpn.applyProfile(
         profile: VpnProfile.vless(
           tag: 'vless-ws-cdn',
-          server: 'mpt.com.mm',
+          server: 'ws-origin.example.net',
           serverPort: 443,
-          uuid: '3de0ab21-26cb-42c1-f835-a26b12ebf782',
+          uuid: '11111111-2222-3333-4444-777777777777',
           transport: VpnTransport.ws,
           websocketPath: '/',
           websocketHeaders: const <String, String>{
-            'Host': 'safety.prosis69.com',
+            'Host': 'cdn-host.example.net',
           },
           tls: const TlsOptions(
             enabled: true,
-            serverName: 'safety.prosis69.com',
+            serverName: 'cdn-host.example.net',
             utlsFingerprint: 'chrome',
             alpn: <String>['http/1.1'],
           ),
@@ -609,7 +609,7 @@ void main() {
       final Map<String, dynamic> tls =
           (outbound['tls'] as Map<dynamic, dynamic>).cast<String, dynamic>();
       expect(tls['enabled'], isTrue);
-      expect(tls['server_name'], 'safety.prosis69.com');
+      expect(tls['server_name'], 'cdn-host.example.net');
       expect(tls['alpn'], <String>['http/1.1']);
       // utls must be absent so sing-box uses the explicit alpn list
       expect(tls.containsKey('utls'), isFalse);
@@ -621,7 +621,51 @@ void main() {
       expect(transport['path'], '/');
       expect(
         (transport['headers'] as Map<dynamic, dynamic>)['Host'],
-        'safety.prosis69.com',
+        'cdn-host.example.net',
+      );
+    },
+  );
+
+  test(
+    'vless ws link without explicit alpn defaults to http/1.1 and strips utls',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.connectManualConfigLink(
+        configLink:
+            'vless://11111111-2222-3333-4444-666666666666@ws-gateway.example.net:443?path=%2Fws%3Fed%3D2048&security=tls&encryption=none&host=ws-gateway.example.net&fp=randomized&type=ws&sni=ws-gateway.example.net#test-sg',
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'test-sg',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> tls =
+          (outbound['tls'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+
+      expect(tls['alpn'], <String>['http/1.1']);
+      expect(tls.containsKey('utls'), isFalse);
+      expect(transport['type'], 'ws');
+      expect(transport['path'], '/ws');
+      expect(transport['max_early_data'], 0);
+      expect(transport.containsKey('early_data_header_name'), isFalse);
+      expect(
+        (transport['headers'] as Map<dynamic, dynamic>)['Host'],
+        'ws-gateway.example.net',
       );
     },
   );
@@ -887,17 +931,17 @@ void main() {
       await vpn.applyProfile(
         profile: VpnProfile.vless(
           tag: 'domain-bootstrap',
-          server: 'mpt.com.mm',
+          server: 'ws-origin.example.net',
           serverPort: 443,
-          uuid: '3de0ab21-26cb-42c1-f835-a26b12ebf782',
+          uuid: '11111111-2222-3333-4444-777777777777',
           transport: VpnTransport.ws,
           websocketPath: '/',
           websocketHeaders: const <String, String>{
-            'Host': 'safety.prosis69.com',
+            'Host': 'cdn-host.example.net',
           },
           tls: const TlsOptions(
             enabled: true,
-            serverName: 'safety.prosis69.com',
+            serverName: 'cdn-host.example.net',
             alpn: <String>['http/1.1'],
           ),
         ),
@@ -918,7 +962,7 @@ void main() {
         final List<dynamic>? domains = raw['domain'] as List<dynamic>?;
         if (domains != null &&
             raw['server'] == 'dns-direct' &&
-            domains.contains('mpt.com.mm')) {
+            domains.contains('ws-origin.example.net')) {
           bootstrapRuleIndex = i;
         }
         final List<dynamic>? queryType = raw['query_type'] as List<dynamic>?;

@@ -256,12 +256,12 @@ void main() {
         profiles: <VpnProfile>[
           VpnProfile.hysteria2(
             tag: 'hy2-only',
-            server: '54.251.185.72',
+            server: '203.0.113.72',
             serverPort: 24312,
             password: 'hy2-pass',
             tls: const TlsOptions(
               enabled: true,
-              serverName: '54.251.185.72',
+              serverName: '203.0.113.72',
               allowInsecure: true,
             ),
           ),

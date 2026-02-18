@@ -1,13 +1,13 @@
 // Smoke test for the VLESS+WS CDN config.
 //
 // Verifies that the exact link:
-//   vless://3de0ab21-26cb-42c1-f835-a26b12ebf782@mpt.com.mm:443
+//   vless://11111111-2222-3333-4444-777777777777@ws-origin.example.net:443
 //     ?path=%2F&security=tls&alpn=http%2F1.1&encryption=none
-//     &host=safety.prosis69.com&fp=chrome&type=ws&sni=safety.prosis69.com#jp
+//     &host=cdn-host.example.net&fp=chrome&type=ws&sni=cdn-host.example.net#jp
 //
 // produces a sing-box config where:
-//   - transport.type = "ws", path = "/", Host header = "safety.prosis69.com"
-//   - tls.enabled = true, server_name = "safety.prosis69.com"
+//   - transport.type = "ws", path = "/", Host header = "cdn-host.example.net"
+//   - tls.enabled = true, server_name = "cdn-host.example.net"
 //   - tls.alpn = ["http/1.1"]
 //   - tls.utls is ABSENT  ← the key fix
 //   - multiplex.enabled = false
@@ -109,9 +109,9 @@ class _CapturePlatform
 
 void main() {
   const String vlessLink =
-      'vless://3de0ab21-26cb-42c1-f835-a26b12ebf782@mpt.com.mm:443'
+      'vless://11111111-2222-3333-4444-777777777777@ws-origin.example.net:443'
       '?path=%2F&security=tls&alpn=http%2F1.1&encryption=none'
-      '&host=safety.prosis69.com&fp=chrome&type=ws&sni=safety.prosis69.com#jp';
+      '&host=cdn-host.example.net&fp=chrome&type=ws&sni=cdn-host.example.net#jp';
 
   test('smoke: VLESS+WS CDN link generates correct sing-box config', () async {
     final _CapturePlatform platform = _CapturePlatform();
@@ -156,11 +156,11 @@ void main() {
     // 1. Basic outbound fields.
     // -----------------------------------------------------------------------
     expect(vlessOutbound['type'], equals('vless'));
-    expect(vlessOutbound['server'], equals('mpt.com.mm'));
+    expect(vlessOutbound['server'], equals('ws-origin.example.net'));
     expect(vlessOutbound['server_port'], equals(443));
     expect(
       vlessOutbound['uuid'],
-      equals('3de0ab21-26cb-42c1-f835-a26b12ebf782'),
+      equals('11111111-2222-3333-4444-777777777777'),
     );
 
     // -----------------------------------------------------------------------
@@ -180,7 +180,7 @@ void main() {
         (transport['headers'] as Map<dynamic, dynamic>).cast<String, dynamic>();
     expect(
       headers['Host'],
-      equals('safety.prosis69.com'),
+      equals('cdn-host.example.net'),
       reason: 'transport.headers.Host',
     );
 
@@ -197,7 +197,7 @@ void main() {
     expect(tls['enabled'], isTrue, reason: 'tls.enabled');
     expect(
       tls['server_name'],
-      equals('safety.prosis69.com'),
+      equals('cdn-host.example.net'),
       reason: 'tls.server_name',
     );
     expect(

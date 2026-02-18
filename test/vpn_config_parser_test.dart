@@ -31,6 +31,95 @@ void main() {
     expect(parsed.profile.tls.enabled, isFalse);
   });
 
+  test('parse vless ws link defaults alpn to http/1.1 only', () {
+    final ParsedVpnConfig parsed = parser.parse(
+      'vless://11111111-2222-3333-4444-666666666666@ws-gateway.example.net:443?path=%2Fws%3Fed%3D2048&security=tls&encryption=none&host=ws-gateway.example.net&fp=randomized&type=ws&sni=ws-gateway.example.net#test-sg',
+    );
+
+    expect(parsed.profile.protocol, VpnProtocol.vless);
+    expect(parsed.profile.transport, VpnTransport.ws);
+    expect(parsed.profile.websocketPath, '/ws');
+    expect(parsed.profile.tls.enabled, isTrue);
+    expect(parsed.profile.tls.serverName, 'ws-gateway.example.net');
+    expect(parsed.profile.tls.alpn, const <String>['http/1.1']);
+    expect(parsed.profile.tls.utlsFingerprint, 'randomized');
+  });
+
+  test('parse ws host aliases and preserve special path query', () {
+    final ParsedVpnConfig vlessParsed = parser.parse(
+      'vless://11111111-2222-3333-4444-555555555555@example.com:443'
+      '?type=ws'
+      '&path=%2F%2Fws%3Fed%3D2048%26foo%3Dbar%2520baz'
+      '&headers=%7B%22Host%22%3A%22vless-host.example.com%22%7D'
+      '&security=tls'
+      '&sni=example.com'
+      '#vless-ws',
+    );
+    expect(vlessParsed.profile.websocketPath, '/ws?foo=bar+baz');
+    expect(
+      vlessParsed.profile.websocketHeaders['Host'],
+      'vless-host.example.com',
+    );
+
+    final ParsedVpnConfig vmessParsed = parser.parse(
+      'vmess://11111111-2222-3333-4444-555555555555@example.com:443'
+      '?type=ws'
+      '&path=%2Fvm%3Fed%3D1024'
+      '&authority=vmess-host.example.com'
+      '&security=tls'
+      '&sni=example.com'
+      '#vmess-ws',
+    );
+    expect(vmessParsed.profile.websocketPath, '/vm');
+    expect(
+      vmessParsed.profile.websocketHeaders['Host'],
+      'vmess-host.example.com',
+    );
+
+    final ParsedVpnConfig trojanParsed = parser.parse(
+      'trojan://password@example.com:443'
+      '?type=ws'
+      '&path=%2Ftr%3Fed%3D512'
+      '&ws_host=trojan-host.example.com'
+      '&security=tls'
+      '&sni=example.com'
+      '#trojan-ws',
+    );
+    expect(trojanParsed.profile.websocketPath, '/tr');
+    expect(
+      trojanParsed.profile.websocketHeaders['Host'],
+      'trojan-host.example.com',
+    );
+
+    final String ssAuth = base64.encode(utf8.encode('aes-256-gcm:ss-pass'));
+    final ParsedVpnConfig ssParsed = parser.parse(
+      'ss://$ssAuth@example.com:443'
+      '?type=ws'
+      '&path=%2Fss%3Fed%3D256'
+      '&headers=%7B%22Host%22%3A%22ss-host.example.com%22%7D'
+      '#ss-ws',
+    );
+    expect(ssParsed.profile.websocketPath, '/ss');
+    expect(ssParsed.profile.websocketHeaders['Host'], 'ss-host.example.com');
+  });
+
+  test('parse ws link allows explicit empty alpn', () {
+    final ParsedVpnConfig parsed = parser.parse(
+      'vless://11111111-2222-3333-4444-555555555555@example.com:443'
+      '?type=ws'
+      '&path=%2Fws'
+      '&security=tls'
+      '&alpn=none'
+      '&sni=example.com'
+      '#vless-empty-alpn',
+    );
+
+    expect(parsed.profile.protocol, VpnProtocol.vless);
+    expect(parsed.profile.transport, VpnTransport.ws);
+    expect(parsed.profile.tls.enabled, isTrue);
+    expect(parsed.profile.tls.alpn, isEmpty);
+  });
+
   test('parse sbmm wrapped link with passphrase', () {
     const String raw =
         'vless://11111111-2222-3333-4444-555555555555@203.0.113.10:29485?type=tcp&encryption=none&security=none#demo-node';

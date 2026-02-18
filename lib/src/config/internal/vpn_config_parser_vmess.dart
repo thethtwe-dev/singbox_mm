@@ -23,9 +23,7 @@ _ParseOutput _parseVmessConfig(
     warnings: warnings,
   );
 
-  final String? wsHost = VpnConfigParser._firstValue(query, const <String>[
-    'host',
-  ]);
+  final String? wsHost = parser._extractWsHost(query);
   final String uuid = VpnConfigParser._requireNonEmpty(
     Uri.decodeComponent(uri.userInfo),
     'vmess uuid',
@@ -37,7 +35,7 @@ _ParseOutput _parseVmessConfig(
     serverPort: uri.port,
     uuid: uuid,
     transport: transport,
-    websocketPath: VpnConfigParser._firstValue(query, const <String>['path']),
+    websocketPath: parser._extractWsPath(query),
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
@@ -49,6 +47,9 @@ _ParseOutput _parseVmessConfig(
       query,
       fallbackServerName: uri.host,
       defaultEnabled: false,
+      defaultAlpn: transport == VpnTransport.ws
+          ? const <String>['http/1.1']
+          : const <String>['h2', 'http/1.1'],
     ),
     extra: parser._buildVmessExtra(query),
   );
@@ -147,9 +148,7 @@ _ParseOutput? _tryParseVmessJsonConfig(
     warnings: warnings,
   );
 
-  final String? wsHost = VpnConfigParser._firstValue(query, const <String>[
-    'host',
-  ]);
+  final String? wsHost = parser._extractWsHost(query);
   final String vmessTag = parser._buildTag(
     explicitTag: VpnConfigParser._stringFromMap(vmessMap, const <String>['ps']),
     fallbackTag: fallbackTag,
@@ -163,7 +162,7 @@ _ParseOutput? _tryParseVmessJsonConfig(
     serverPort: port,
     uuid: uuid,
     transport: transport,
-    websocketPath: VpnConfigParser._firstValue(query, const <String>['path']),
+    websocketPath: parser._extractWsPath(query),
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
@@ -175,6 +174,9 @@ _ParseOutput? _tryParseVmessJsonConfig(
       query,
       fallbackServerName: host,
       defaultEnabled: false,
+      defaultAlpn: transport == VpnTransport.ws
+          ? const <String>['http/1.1']
+          : const <String>['h2', 'http/1.1'],
     ),
     extra: parser._buildVmessExtra(
       query,

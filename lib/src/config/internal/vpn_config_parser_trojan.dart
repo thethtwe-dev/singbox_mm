@@ -19,9 +19,7 @@ _ParseOutput _parseTrojanConfig(
     Uri.decodeComponent(uri.userInfo),
     'trojan password',
   );
-  final String? wsHost = VpnConfigParser._firstValue(query, const <String>[
-    'host',
-  ]);
+  final String? wsHost = parser._extractWsHost(query);
 
   final VpnProfile profile = VpnProfile.trojan(
     tag: parser._resolveTag(uri, fallbackTag: fallbackTag, scheme: 'trojan'),
@@ -29,7 +27,7 @@ _ParseOutput _parseTrojanConfig(
     serverPort: uri.port,
     password: password,
     transport: transport,
-    websocketPath: VpnConfigParser._firstValue(query, const <String>['path']),
+    websocketPath: parser._extractWsPath(query),
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
@@ -41,6 +39,9 @@ _ParseOutput _parseTrojanConfig(
       query,
       fallbackServerName: uri.host,
       defaultEnabled: true,
+      defaultAlpn: transport == VpnTransport.ws
+          ? const <String>['http/1.1']
+          : const <String>['h2', 'http/1.1'],
     ),
     extra: parser._buildTrojanExtra(query),
   );

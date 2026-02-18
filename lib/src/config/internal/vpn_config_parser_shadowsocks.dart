@@ -41,9 +41,7 @@ _ParseOutput _parseShadowsocksConfig(
     VpnConfigParser._firstValue(query, const <String>['type', 'net']),
     warnings: warnings,
   );
-  final String? wsHost = VpnConfigParser._firstValue(query, const <String>[
-    'host',
-  ]);
+  final String? wsHost = parser._extractWsHost(query);
 
   final VpnProfile profile = VpnProfile.shadowsocks(
     tag: parser._buildTag(
@@ -57,7 +55,7 @@ _ParseOutput _parseShadowsocksConfig(
     method: parsed.method,
     password: parsed.password,
     transport: transport,
-    websocketPath: VpnConfigParser._firstValue(query, const <String>['path']),
+    websocketPath: parser._extractWsPath(query),
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
@@ -69,6 +67,9 @@ _ParseOutput _parseShadowsocksConfig(
       query,
       fallbackServerName: parsed.host,
       defaultEnabled: false,
+      defaultAlpn: transport == VpnTransport.ws
+          ? const <String>['http/1.1']
+          : const <String>['h2', 'http/1.1'],
     ),
     extra: parser._buildShadowsocksExtra(query),
   );

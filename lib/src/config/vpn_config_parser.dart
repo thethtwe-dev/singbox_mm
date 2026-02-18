@@ -256,6 +256,183 @@ class VpnConfigParser {
     return output;
   }
 
+  String? _extractWsPath(Map<String, String> query) {
+    final String? raw = _firstValue(query, const <String>[
+      'path',
+      'ws-path',
+      'ws_path',
+    ]);
+    if (raw == null) {
+      return null;
+    }
+    return _sanitizeWsPath(raw);
+  }
+
+  String _sanitizeWsPath(String raw) {
+    String path = raw.trim();
+    if (path.isEmpty) {
+      return '/';
+    }
+    path = path.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '');
+    if (!path.startsWith('/')) {
+      path = '/$path';
+    }
+    path = path.replaceFirst(RegExp(r'^/+'), '/');
+
+    final int queryIndex = path.indexOf('?');
+    if (queryIndex < 0) {
+      return path;
+    }
+
+    final String basePath = queryIndex == 0
+        ? '/'
+        : path.substring(0, queryIndex);
+    final String rawQuery = path.substring(queryIndex + 1);
+    if (rawQuery.isEmpty) {
+      return basePath;
+    }
+
+    final List<String> keptPairs = <String>[];
+    for (final String pair in rawQuery.split('&')) {
+      if (pair.isEmpty) {
+        continue;
+      }
+      final int split = pair.indexOf('=');
+      final String keyRaw = split < 0 ? pair : pair.substring(0, split);
+      final String valueRaw = split < 0 ? '' : pair.substring(split + 1);
+      final String key = _tryDecodeComponent(keyRaw)?.trim() ?? '';
+      if (key.isEmpty) {
+        continue;
+      }
+      final String lowered = key.toLowerCase();
+      if (lowered == 'ed' || lowered == 'eh') {
+        continue;
+      }
+
+      final String value = (_tryDecodeComponent(valueRaw) ?? valueRaw).trim();
+      keptPairs.add(
+        '${Uri.encodeQueryComponent(key)}=${Uri.encodeQueryComponent(value)}',
+      );
+    }
+    if (keptPairs.isEmpty) {
+      return basePath;
+    }
+    return '$basePath?${keptPairs.join('&')}';
+  }
+
+  String? _extractWsHost(Map<String, String> query) {
+    final String? direct = _firstValue(query, const <String>[
+      'host',
+      'ws-host',
+      'ws_host',
+      'authority',
+      ':authority',
+    ]);
+    if (direct != null && direct.trim().isNotEmpty) {
+      return direct.trim();
+    }
+
+    final String? headersRaw = _firstValue(query, const <String>[
+      'headers',
+      'ws_headers',
+      'ws-headers',
+      'http_headers',
+      'http-headers',
+    ]);
+    if (headersRaw == null || headersRaw.trim().isEmpty) {
+      return null;
+    }
+
+    final String? fromMap = _extractHostFromHeaderMap(
+      _tryJsonDecode(headersRaw),
+    );
+    if (fromMap != null) {
+      return fromMap;
+    }
+
+    final String relaxed = headersRaw.replaceAll("'", '"');
+    if (relaxed != headersRaw) {
+      final String? relaxedMap = _extractHostFromHeaderMap(
+        _tryJsonDecode(relaxed),
+      );
+      if (relaxedMap != null) {
+        return relaxedMap;
+      }
+    }
+
+    final String? fromPairs = _extractHostFromHeaderPairs(headersRaw);
+    if (fromPairs != null) {
+      return fromPairs;
+    }
+
+    if (relaxed != headersRaw) {
+      return _extractHostFromHeaderPairs(relaxed);
+    }
+    return null;
+  }
+
+  String? _extractHostFromHeaderMap(dynamic decoded) {
+    if (decoded is! Map<Object?, Object?>) {
+      return null;
+    }
+    for (final MapEntry<Object?, Object?> entry in decoded.entries) {
+      final String key = entry.key?.toString().trim().toLowerCase() ?? '';
+      if (key == 'host' || key == ':authority' || key == 'authority') {
+        final String value = entry.value?.toString().trim() ?? '';
+        if (value.isNotEmpty) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _extractHostFromHeaderPairs(String raw) {
+    for (final String segment in raw.split(RegExp(r'[,;{}]'))) {
+      final String line = segment.trim();
+      if (line.isEmpty) {
+        continue;
+      }
+
+      final int colon = line.indexOf(':');
+      final int equals = line.indexOf('=');
+      int split = -1;
+      if (colon >= 0 && equals >= 0) {
+        split = colon < equals ? colon : equals;
+      } else if (colon >= 0) {
+        split = colon;
+      } else if (equals >= 0) {
+        split = equals;
+      }
+      if (split <= 0 || split == line.length - 1) {
+        continue;
+      }
+
+      final String key = _trimHeaderToken(
+        line.substring(0, split),
+      ).toLowerCase();
+      if (key != 'host' && key != ':authority' && key != 'authority') {
+        continue;
+      }
+
+      final String value = _trimHeaderToken(line.substring(split + 1));
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  String _trimHeaderToken(String value) {
+    String normalized = value.trim();
+    while (normalized.length >= 2 &&
+        ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+            (normalized.startsWith("'") && normalized.endsWith("'")))) {
+      normalized = normalized.substring(1, normalized.length - 1).trim();
+    }
+    return normalized;
+  }
+
   Map<String, String> _parseRawQuery(String rawQuery) {
     if (rawQuery.isEmpty) {
       return const <String, String>{};
@@ -329,9 +506,17 @@ class VpnConfigParser {
       return const TlsOptions(enabled: false);
     }
 
-    final List<String> parsedAlpn = _splitCsv(
-      _firstValue(query, const <String>['alpn']),
-    );
+    final String? rawAlpn = _firstValue(query, const <String>['alpn']);
+    final String normalizedAlpn = rawAlpn?.trim().toLowerCase() ?? '';
+    final bool explicitEmptyAlpn =
+        normalizedAlpn == 'none' ||
+        normalizedAlpn == 'empty' ||
+        normalizedAlpn == 'off' ||
+        normalizedAlpn == 'false' ||
+        normalizedAlpn == '0';
+    final List<String> parsedAlpn = explicitEmptyAlpn
+        ? const <String>[]
+        : _splitCsv(rawAlpn);
 
     return TlsOptions(
       enabled: true,
@@ -361,7 +546,9 @@ class VpnConfigParser {
         'shortid',
         'short_id',
       ]),
-      alpn: parsedAlpn.isEmpty ? defaultAlpn : parsedAlpn,
+      alpn: explicitEmptyAlpn
+          ? const <String>[]
+          : (parsedAlpn.isEmpty ? defaultAlpn : parsedAlpn),
     );
   }
 

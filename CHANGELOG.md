@@ -1,3 +1,14 @@
+## 0.1.6
+
+- Hardened WebSocket parser/config generation to reduce strict CDN `404` handshake failures.
+- Disabled WebSocket Early Data by default in generated transport:
+  now emits `max_early_data: 0` and omits `early_data_header_name`.
+- Added WS path sanitization for parser+builder:
+  strips control characters, normalizes leading `//` to `/`, and removes `ed/eh` query hints.
+- Expanded WS host extraction aliases across parsers (`host`, `ws_host`, `ws-host`, `authority`, `:authority`, and header-map forms).
+- Added optional explicit empty ALPN parsing support (`alpn=none|empty|off|false|0` -> `tls.alpn=[]`) for strict WS/TLS endpoints.
+- Added/updated regression tests for WS path/host normalization and early-data-disabled transport output.
+
 ## 0.1.5
 
 - Fixed domain-bootstrap DNS handling for strict FakeIP mode by extracting

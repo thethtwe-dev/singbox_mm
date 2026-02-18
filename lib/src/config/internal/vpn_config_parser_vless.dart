@@ -19,9 +19,7 @@ _ParseOutput _parseVlessConfig(
     Uri.decodeComponent(uri.userInfo),
     'vless uuid',
   );
-  final String? wsHost = VpnConfigParser._firstValue(query, const <String>[
-    'host',
-  ]);
+  final String? wsHost = parser._extractWsHost(query);
 
   final VpnProfile profile = VpnProfile.vless(
     tag: parser._resolveTag(uri, fallbackTag: fallbackTag, scheme: 'vless'),
@@ -30,7 +28,7 @@ _ParseOutput _parseVlessConfig(
     uuid: uuid,
     flow: VpnConfigParser._firstValue(query, const <String>['flow']),
     transport: transport,
-    websocketPath: VpnConfigParser._firstValue(query, const <String>['path']),
+    websocketPath: parser._extractWsPath(query),
     websocketHeaders: wsHost == null
         ? const <String, String>{}
         : <String, String>{'Host': wsHost},
@@ -42,6 +40,9 @@ _ParseOutput _parseVlessConfig(
       query,
       fallbackServerName: uri.host,
       defaultEnabled: false,
+      defaultAlpn: transport == VpnTransport.ws
+          ? const <String>['http/1.1']
+          : const <String>['h2', 'http/1.1'],
     ),
     extra: parser._buildVlessExtra(query),
   );

@@ -139,9 +139,18 @@ Future<List<VpnPingResult>> _pingEndpointPoolInternal(
 
   await Future.wait(List<Future<void>>.generate(workerCount, (_) => worker()));
 
-  final List<VpnPingResult> results = slotResults
-      .map((VpnPingResult? item) => item!)
-      .toList(growable: false);
+  final List<VpnPingResult> results = List<VpnPingResult>.generate(
+    poolSize,
+    (int i) =>
+        slotResults[i] ??
+        VpnPingResult.failure(
+          host: client._endpointPool[i].server,
+          port: client._endpointPool[i].serverPort,
+          tag: client._endpointPool[i].tag,
+          error: 'ping worker did not complete',
+        ),
+    growable: false,
+  );
 
   if (updateHealth) {
     for (int index = 0; index < results.length; index++) {

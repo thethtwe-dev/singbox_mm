@@ -38,10 +38,14 @@ internal object VpnConfigContentLoader {
                 logTag = logTag,
             )
         }
+        val sanitizedConfigContent = VpnGeoRuleSanitizer.apply(
+            rawConfigContent = configContent,
+            logTag = logTag,
+        )
 
         return VpnConfigLoadResult(
             configPath = configPath,
-            configContent = configContent,
+            configContent = sanitizedConfigContent,
         )
     }
 }

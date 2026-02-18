@@ -116,8 +116,10 @@ internal class PluginMethodOperations(
     companion object {
         private const val DEFAULT_TIMEOUT_MS = 3000
         private const val DNS_TIMEOUT_GRACE_MS = 1200L
+        private const val PING_EXECUTOR_THREADS = 4
         private val pingThreadCounter = AtomicInteger(1)
-        private val pingExecutor: ExecutorService = Executors.newCachedThreadPool(
+        private val pingExecutor: ExecutorService = Executors.newFixedThreadPool(
+            PING_EXECUTOR_THREADS,
             object : ThreadFactory {
                 override fun newThread(runnable: Runnable): Thread {
                     return Thread(

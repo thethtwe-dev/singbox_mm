@@ -1,3 +1,28 @@
+## 0.1.5
+
+- Fixed domain-bootstrap DNS handling for strict FakeIP mode by extracting
+  bootstrap hosts from more config fields (transport headers and extra host
+  hints), preventing outbound server-domain resolution loops.
+- Made QUIC/UDP route blocking protocol-aware:
+  UDP-native profiles (`hysteria2`, `tuic`, `wireguard`, and QUIC transport)
+  are no longer blocked by generic UDP/443 + QUIC deny rules.
+- Added a hardened silent-packet-loss resilience path in managed mode with
+  new health-check options:
+  `silentPacketLossTimeout` and `failoverOnSilentPacketLoss`.
+- Increased health monitor responsiveness by evaluating health checks on each
+  configured tick interval (instead of skipping stable ticks).
+- Kept WS `alpn=http/1.1` compatibility strict by stripping `tls.utls` to avoid
+  accidental HTTP/2 negotiation on CDN WebSocket links.
+- Added regression tests for:
+  DNS bootstrap ordering and extra-host extraction,
+  protocol-aware QUIC blocking behavior,
+  and WS ALPN compatibility.
+
+## 0.1.4
+
+- Maintenance release to refresh package metadata and publication pipeline.
+- Updated README install snippet to the latest published version line.
+
 ## 0.1.3
 
 - Improved Android native ping reliability by adding a hard timeout wrapper,

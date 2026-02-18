@@ -22,6 +22,8 @@ class _ManagedFakePlatform
   String? lastError;
   int txBytes = 0;
   int rxBytes = 0;
+  bool autoIncrementStats = false;
+  int autoIncrementStep = 64;
 
   @override
   Stream<VpnConnectionState> get stateStream => _controller.stream;
@@ -102,6 +104,9 @@ class _ManagedFakePlatform
 
   @override
   Future<VpnRuntimeStats> getStats() async {
+    if (autoIncrementStats && started) {
+      txBytes += autoIncrementStep;
+    }
     return VpnRuntimeStats(
       totalUploaded: txBytes,
       totalDownloaded: rxBytes,
@@ -261,6 +266,7 @@ void main() {
             ),
           ),
         ],
+        throttlePolicy: const TrafficThrottlePolicy(enableAutoMtuProbe: false),
         options: const EndpointPoolOptions(
           autoFailover: true,
           healthCheck: VpnHealthCheckOptions(
@@ -500,6 +506,7 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
             tls: const TlsOptions(enabled: true),
           ),
         ],
+        throttlePolicy: const TrafficThrottlePolicy(enableAutoMtuProbe: false),
         options: const EndpointPoolOptions(
           autoFailover: true,
           healthCheck: VpnHealthCheckOptions(
@@ -507,6 +514,7 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
             noTrafficTimeout: Duration(milliseconds: 100),
             pingEnabled: true,
             connectivityProbeEnabled: false,
+            failoverOnSilentPacketLoss: false,
             maxConsecutiveFailures: 1,
           ),
         ),
@@ -585,7 +593,8 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
         ((secondConfig['inbounds'] as List<dynamic>).first
                 as Map<String, dynamic>)['mtu']
             as int;
-    expect(secondMtu, lessThan(firstMtu));
+    expect(firstMtu, 1100);
+    expect(secondMtu, 1100);
 
     await vpn.dispose();
     await fakePlatform.dispose();
@@ -633,7 +642,7 @@ vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:443?security=non
           ((firstConfig['inbounds'] as List<dynamic>).first
                   as Map<String, dynamic>)['mtu']
               as int;
-      expect(firstMtu, 1380);
+      expect(firstMtu, 1100);
 
       await vpn.dispose();
       await fakePlatform.dispose();

@@ -27,13 +27,10 @@ class SingboxConfigBuilder {
       profile: profile,
       settings: settings,
     );
-    final bool disableIpv6TunCapture = _shouldDisableIpv6TunCapture(
-      profile: profile,
-      settings: settings,
-    );
     final Map<String, Object?> proxyOutbound = profile.toOutboundJson(
       throttle: throttlePolicy,
     );
+    _enforceVlessMultiplexStability(outbound: proxyOutbound, profile: profile);
     if (forceIpv4Only) {
       proxyOutbound['domain_strategy'] = 'ipv4_only';
     }
@@ -59,21 +56,18 @@ class SingboxConfigBuilder {
 
     final List<Object?> inbounds = _inboundBuilder.build(
       settings: settings,
-      throttlePolicy: throttlePolicy,
       tunInterfaceName: tunInterfaceName,
       tunInet4Address: tunInet4Address,
-      disableIpv6Capture: disableIpv6TunCapture,
     );
 
     final Map<String, Object?> dns = _dnsBuilder.build(
       profile: profile,
       bypassPolicy: bypassPolicy,
-      throttlePolicy: throttlePolicy,
       settings: settings,
-      forceIpv4Only: forceIpv4Only,
     );
 
     final List<Object?> routeRules = _routeRulesBuilder.build(
+      profile: profile,
       bypassPolicy: bypassPolicy,
       settings: settings,
       includeDnsRoutingRule: settings.dns.enableDnsRouting,
@@ -135,6 +129,9 @@ class SingboxConfigBuilder {
 
     switch (profile.protocol) {
       case VpnProtocol.vless:
+        outbound['multiplex'] = const <String, Object?>{'enabled': false};
+        outbound['udp_fragment'] = false;
+        break;
       case VpnProtocol.vmess:
       case VpnProtocol.trojan:
         outbound['udp_fragment'] = false;
@@ -150,6 +147,36 @@ class SingboxConfigBuilder {
         outbound['udp_fragment'] = false;
         break;
     }
+
+    // When transport is WebSocket, sing-box's uTLS fingerprint overrides the
+    // explicit `alpn` field during the TLS handshake (e.g. Chrome's fingerprint
+    // includes `h2`). The CDN then negotiates HTTP/2, which breaks WebSocket
+    // upgrades (WebSocket requires HTTP/1.1). Strip `utls` from the TLS block
+    // when the profile explicitly requests http/1.1-only ALPN so that sing-box
+    // honours the explicit ALPN list instead of the fingerprint's built-in one.
+    if (profile.transport == VpnTransport.ws) {
+      final bool http11Only =
+          profile.tls.alpn.length == 1 &&
+          profile.tls.alpn.first.toLowerCase() == 'http/1.1';
+      if (http11Only) {
+        final Map<String, Object?> tls = _asObjectMap(outbound['tls']);
+        if (tls.isNotEmpty) {
+          tls.remove('utls');
+          outbound['tls'] = tls;
+        }
+      }
+    }
+  }
+
+  void _enforceVlessMultiplexStability({
+    required Map<String, Object?> outbound,
+    required VpnProfile profile,
+  }) {
+    if (profile.protocol != VpnProtocol.vless) {
+      return;
+    }
+    // Some servers exhibit intermittent stalls under smux on VLESS.
+    outbound['multiplex'] = const <String, Object?>{'enabled': false};
   }
 
   bool _shouldForceIpv4Only({
@@ -168,27 +195,6 @@ class SingboxConfigBuilder {
       case VpnProtocol.shadowsocks:
       case VpnProtocol.ssh:
         return profile.transport != VpnTransport.quic;
-    }
-  }
-
-  bool _shouldDisableIpv6TunCapture({
-    required VpnProfile profile,
-    required SingboxFeatureSettings settings,
-  }) {
-    if (settings.route.ipv6RouteMode != SingboxIpv6RouteMode.disable) {
-      return false;
-    }
-    switch (profile.protocol) {
-      case VpnProtocol.hysteria2:
-      case VpnProtocol.tuic:
-        return true;
-      case VpnProtocol.vless:
-      case VpnProtocol.vmess:
-      case VpnProtocol.trojan:
-      case VpnProtocol.shadowsocks:
-      case VpnProtocol.wireguard:
-      case VpnProtocol.ssh:
-        return false;
     }
   }
 

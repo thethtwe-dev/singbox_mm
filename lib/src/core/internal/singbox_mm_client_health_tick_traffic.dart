@@ -4,17 +4,13 @@ Future<void> _evaluateNoTrafficHealthInternal(
   SignboxVpn client,
   VpnHealthCheckOptions options, {
   required bool hasPositiveHealthSignal,
+  required bool connectivityProbeSucceeded,
   required bool allowFailureCounting,
 }) async {
-  if (!options.failoverOnNoTraffic) {
+  if (!options.failoverOnNoTraffic && !options.failoverOnSilentPacketLoss) {
     return;
   }
   if (!allowFailureCounting) {
-    return;
-  }
-  // If the tunnel is reachable (ping or probe passed), treat no traffic as
-  // likely idle user traffic instead of packet loss.
-  if (hasPositiveHealthSignal) {
     return;
   }
 
@@ -32,6 +28,7 @@ Future<void> _evaluateNoTrafficHealthInternal(
     client._lastTotalBytes = total;
     client._hasSeenTraffic = true;
     client._lastTrafficProgressAt = now;
+    client._consecutiveSilentPacketLossSignals = 0;
     _markEndpointProgressInternal(client, client._activeEndpointIndex, now);
     _markEndpointSuccessInternal(client, client._activeEndpointIndex);
     return;
@@ -39,11 +36,36 @@ Future<void> _evaluateNoTrafficHealthInternal(
 
   client._lastTotalBytes = total;
   if (!client._hasSeenTraffic) {
+    client._consecutiveSilentPacketLossSignals = 0;
     return;
   }
 
   final DateTime lastProgress = client._lastTrafficProgressAt ?? now;
-  if (now.difference(lastProgress) < options.noTrafficTimeout) {
+  final Duration stallDuration = now.difference(lastProgress);
+
+  if (hasPositiveHealthSignal && options.failoverOnSilentPacketLoss) {
+    if (!options.connectivityProbeEnabled || !connectivityProbeSucceeded) {
+      client._consecutiveSilentPacketLossSignals = 0;
+      return;
+    }
+    if (stallDuration < options.silentPacketLossTimeout) {
+      client._consecutiveSilentPacketLossSignals = 0;
+      return;
+    }
+    final int requiredSignals = max(1, options.maxConsecutiveFailures);
+    client._consecutiveSilentPacketLossSignals++;
+    if (client._consecutiveSilentPacketLossSignals < requiredSignals) {
+      return;
+    }
+    client._consecutiveSilentPacketLossSignals = 0;
+    client._lastTrafficProgressAt = now;
+    await _markEndpointFailureAndMaybeFailoverInternal(client, options);
+    return;
+  }
+
+  client._consecutiveSilentPacketLossSignals = 0;
+  if (!options.failoverOnNoTraffic ||
+      stallDuration < options.noTrafficTimeout) {
     return;
   }
 

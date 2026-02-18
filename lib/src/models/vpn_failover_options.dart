@@ -9,6 +9,7 @@ class VpnHealthCheckOptions {
     this.checkInterval = const Duration(seconds: 2),
     this.startupGracePeriod = const Duration(seconds: 12),
     this.noTrafficTimeout = const Duration(seconds: 8),
+    this.silentPacketLossTimeout = const Duration(seconds: 2),
     this.pingEnabled = true,
     this.pingTimeout = const Duration(milliseconds: 900),
     this.connectivityProbeEnabled = true,
@@ -16,6 +17,7 @@ class VpnHealthCheckOptions {
     this.connectivityProbeTimeout = const Duration(milliseconds: 1500),
     this.maxConsecutiveFailures = 1,
     this.failoverOnNoTraffic = true,
+    this.failoverOnSilentPacketLoss = true,
     this.failoverOnPingFailure = true,
     this.failoverOnConnectivityFailure = true,
     this.failoverOnError = true,
@@ -37,6 +39,10 @@ class VpnHealthCheckOptions {
   /// Allowed inactivity window before "no traffic" is treated as unhealthy.
   final Duration noTrafficTimeout;
 
+  /// Allowed stall window before "silent packet loss" is treated as unhealthy
+  /// even while control-plane checks still pass.
+  final Duration silentPacketLossTimeout;
+
   /// Enables endpoint ping checks.
   final bool pingEnabled;
 
@@ -57,6 +63,10 @@ class VpnHealthCheckOptions {
 
   /// Enables failover when no-traffic condition is detected.
   final bool failoverOnNoTraffic;
+
+  /// Enables failover when payload traffic stalls despite successful health
+  /// checks ("connected but unusable" symptom).
+  final bool failoverOnSilentPacketLoss;
 
   /// Enables failover when ping fails.
   final bool failoverOnPingFailure;

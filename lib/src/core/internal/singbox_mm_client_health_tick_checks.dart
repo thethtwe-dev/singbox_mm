@@ -1,6 +1,12 @@
 part of '../singbox_mm_client.dart';
 
-Future<(bool hasPositiveSignal, bool shouldCountFailure)>
+Future<
+  (
+    bool hasPositiveSignal,
+    bool shouldCountFailure,
+    bool connectivityProbeSucceeded,
+  )
+>
 _runEndpointSignalChecksInternal(
   SignboxVpn client,
   VpnHealthCheckOptions options, {
@@ -76,5 +82,5 @@ _runEndpointSignalChecksInternal(
     _markEndpointSuccessInternal(client, client._activeEndpointIndex);
   }
 
-  return (hasPositiveHealthSignal, shouldCountFailure);
+  return (hasPositiveHealthSignal, shouldCountFailure, probeSucceeded);
 }

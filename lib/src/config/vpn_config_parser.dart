@@ -525,12 +525,15 @@ class VpnConfigParser {
       return null;
     }
 
+    // Try standard base64 first (after normalizing URL-safe chars).
     final String padded = _normalizeBase64Padding(normalized);
     try {
       return utf8.decode(base64.decode(padded));
     } on FormatException {
+      // Fall back to URL-safe base64 using the original (pre-normalized)
+      // string so that '-' and '_' chars are preserved for base64Url.
       try {
-        return utf8.decode(base64Url.decode(padded));
+        return utf8.decode(base64Url.decode(normalized));
       } on FormatException {
         return null;
       }

@@ -19,23 +19,10 @@ internal object VpnDefaultInterfaceResolver {
         return interfaceName
     }
 
-    fun resolveInterfaceIndex(
-        interfaceName: String,
-        attempts: Int = 10,
-        retryDelayMillis: Long = 100L,
-    ): Int {
-        var interfaceIndex = -1
-        for (attempt in 0 until attempts) {
-            interfaceIndex = runCatching {
-                NetworkInterface.getByName(interfaceName)?.index ?: -1
-            }.getOrDefault(-1)
-            if (interfaceIndex > 0) {
-                return interfaceIndex
-            }
-            if (attempt < attempts - 1) {
-                Thread.sleep(retryDelayMillis)
-            }
-        }
-        return -1
+    fun resolveInterfaceIndex(interfaceName: String): Int {
+        // Never block the callback thread; callback churn will re-notify soon.
+        return runCatching {
+            NetworkInterface.getByName(interfaceName)?.index ?: -1
+        }.getOrDefault(-1)
     }
 }

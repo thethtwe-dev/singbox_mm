@@ -1,24 +1,20 @@
 import '../../models/bypass_policy.dart';
 import '../../models/singbox_feature_settings.dart';
-import '../../models/traffic_throttle_policy.dart';
 import '../../models/vpn_profile.dart';
 
 class SingboxDnsBuilder {
   const SingboxDnsBuilder();
 
+  static const String _strictRemoteDns = 'https://1.1.1.1/dns-query';
+  static const String _strictDirectDns = '1.1.1.1';
+  static const String _strictFakeIpInet4Range = '198.18.0.0/15';
+
   Map<String, Object?> build({
     required VpnProfile profile,
     required BypassPolicy bypassPolicy,
-    required TrafficThrottlePolicy throttlePolicy,
     required SingboxFeatureSettings settings,
-    required bool forceIpv4Only,
   }) {
-    final String defaultDnsStrategy = _resolveDnsStrategy(
-      strategy: forceIpv4Only ? 'ipv4_only' : throttlePolicy.dnsStrategy,
-      fallback: settings.route.ipv6RouteMode == SingboxIpv6RouteMode.only
-          ? 'prefer_ipv6'
-          : 'prefer_ipv4',
-    );
+    const String defaultDnsStrategy = 'prefer_ipv4';
     final String remoteDnsStrategy = _resolveDnsStrategy(
       strategy: settings.dns.remoteDomainStrategy,
       fallback: defaultDnsStrategy,
@@ -27,12 +23,14 @@ class SingboxDnsBuilder {
       strategy: settings.dns.directDomainStrategy,
       fallback: defaultDnsStrategy,
     );
-    final String resolvedRemoteStrategy = forceIpv4Only
-        ? 'ipv4_only'
-        : remoteDnsStrategy;
-    final String resolvedDirectStrategy = forceIpv4Only
-        ? 'ipv4_only'
-        : directDnsStrategy;
+    final String resolvedRemoteStrategy = _resolveDnsStrategy(
+      strategy: 'prefer_ipv4',
+      fallback: remoteDnsStrategy,
+    );
+    final String resolvedDirectStrategy = _resolveDnsStrategy(
+      strategy: 'prefer_ipv4',
+      fallback: directDnsStrategy,
+    );
 
     final DnsProviderProfile providerProfile = dnsProviderProfileForPreset(
       settings.dns.providerPreset,
@@ -48,19 +46,27 @@ class SingboxDnsBuilder {
         : (settings.dns.remoteDns.isNotEmpty
               ? settings.dns.remoteDns
               : bypassPolicy.remoteDnsAddress);
+    final String resolvedRemoteAddress = _sanitizeDnsAddress(
+      remoteAddress,
+      fallback: _strictRemoteDns,
+    );
     final String directAddress = useProviderPreset
         ? (hasExplicitDirectDns
               ? settings.dns.directDns
               : providerProfile.directDns)
         : (settings.dns.directDns.isNotEmpty
               ? settings.dns.directDns
-              : 'local');
+              : _strictDirectDns);
+    final String resolvedDirectAddress = _sanitizeDnsAddress(
+      directAddress,
+      fallback: _strictDirectDns,
+    );
     final String dohFallbackAddress = settings.dns.dohFallbackDns.trim();
     final bool enableDohFallback =
         settings.dns.enableDohFallback &&
-        _looksLikeDohAddress(remoteAddress) &&
+        _looksLikeDohAddress(resolvedRemoteAddress) &&
         dohFallbackAddress.isNotEmpty &&
-        dohFallbackAddress.toLowerCase() != remoteAddress.toLowerCase();
+        dohFallbackAddress.toLowerCase() != resolvedRemoteAddress.toLowerCase();
     final bool preferDirectDohFallback =
         enableDohFallback &&
         (profile.protocol == VpnProtocol.hysteria2 ||
@@ -74,11 +80,20 @@ class SingboxDnsBuilder {
       ...bypassPolicy.directCidrs,
       ...settings.route.regionDirectCidrs,
     ]);
+    final List<String> bootstrapDomains = _dedupeStrings(
+      _collectBootstrapDomains(profile),
+    );
 
     final List<Object?> rules = <Object?>[];
     if (directDomains.isNotEmpty) {
       rules.add(<String, Object?>{
         'domain_suffix': directDomains,
+        'server': 'dns-direct',
+      });
+    }
+    if (bootstrapDomains.isNotEmpty) {
+      rules.add(<String, Object?>{
+        'domain': bootstrapDomains,
         'server': 'dns-direct',
       });
     }
@@ -102,17 +117,15 @@ class SingboxDnsBuilder {
     }
 
     final List<Object?> servers = <Object?>[];
-    if (settings.dns.enableFakeIp) {
-      servers.add(<String, Object?>{'tag': 'dns-fakeip', 'address': 'fakeip'});
-      rules.insert(0, <String, Object?>{
-        'query_type': const <String>['A', 'AAAA'],
-        'server': 'dns-fakeip',
-      });
-    }
+    servers.add(<String, Object?>{'tag': 'dns-fakeip', 'address': 'fakeip'});
+    rules.add(<String, Object?>{
+      'query_type': const <String>['A'],
+      'server': 'dns-fakeip',
+    });
 
     servers.add(<String, Object?>{
       'tag': 'dns-remote',
-      'address': remoteAddress,
+      'address': resolvedRemoteAddress,
       'detour': profile.tag,
       'strategy': resolvedRemoteStrategy,
     });
@@ -132,7 +145,7 @@ class SingboxDnsBuilder {
     }
     servers.add(<String, Object?>{
       'tag': 'dns-direct',
-      'address': directAddress,
+      'address': resolvedDirectAddress,
       'detour': 'direct',
       'strategy': resolvedDirectStrategy,
     });
@@ -144,13 +157,10 @@ class SingboxDnsBuilder {
       'final': preferDirectDohFallback ? 'dns-remote-fallback' : 'dns-remote',
       'independent_cache': true,
     };
-    if (settings.dns.enableFakeIp) {
-      dns['fakeip'] = <String, Object?>{
-        'enabled': true,
-        'inet4_range': settings.dns.fakeIpInet4Range,
-        'inet6_range': settings.dns.fakeIpInet6Range,
-      };
-    }
+    dns['fakeip'] = <String, Object?>{
+      'enabled': true,
+      'inet4_range': _strictFakeIpInet4Range,
+    };
     return dns;
   }
 
@@ -194,6 +204,148 @@ class SingboxDnsBuilder {
       return false;
     }
     return true;
+  }
+
+  String _sanitizeDnsAddress(String address, {required String fallback}) {
+    final String normalized = address.trim();
+    if (normalized.isEmpty) {
+      return fallback;
+    }
+    if (normalized.toLowerCase() == 'local') {
+      return fallback;
+    }
+    return normalized;
+  }
+
+  List<String> _collectBootstrapDomains(VpnProfile profile) {
+    final Set<String> domains = <String>{};
+
+    void addIfDomain(String? raw) => _addCandidateDomain(domains, raw);
+
+    addIfDomain(profile.server);
+    addIfDomain(profile.tls.serverName);
+    addIfDomain(profile.websocketHeaders['Host']);
+    addIfDomain(profile.websocketHeaders['host']);
+    addIfDomain(profile.websocketHeaders[':authority']);
+    addIfDomain(profile.websocketHeaders['authority']);
+
+    _collectDomainsFromExtra(domains, profile.extra);
+
+    return domains.toList(growable: false);
+  }
+
+  void _collectDomainsFromExtra(
+    Set<String> domains,
+    Map<String, Object?> extra,
+  ) {
+    const List<String> directHostKeys = <String>[
+      'host',
+      'sni',
+      'server_name',
+      'servername',
+      'authority',
+      'grpc_authority',
+      'peer',
+      'domain',
+      'fallback_host',
+      'address_resolver_domain',
+    ];
+
+    for (final String key in directHostKeys) {
+      final Object? value = extra[key];
+      if (value is String) {
+        _addCandidateDomain(domains, value);
+      } else if (value is List<dynamic>) {
+        for (final dynamic item in value) {
+          if (item is String) {
+            _addCandidateDomain(domains, item);
+          }
+        }
+      }
+    }
+
+    const List<String> headerContainerKeys = <String>[
+      'headers',
+      'ws_headers',
+      'http_headers',
+    ];
+    for (final String key in headerContainerKeys) {
+      final Object? raw = extra[key];
+      if (raw is! Map<Object?, Object?>) {
+        continue;
+      }
+      for (final MapEntry<Object?, Object?> entry in raw.entries) {
+        if (entry.key is! String || entry.value is! String) {
+          continue;
+        }
+        final String normalizedKey = (entry.key as String).toLowerCase();
+        if (normalizedKey == 'host' ||
+            normalizedKey == ':authority' ||
+            normalizedKey == 'authority') {
+          _addCandidateDomain(domains, entry.value as String);
+        }
+      }
+    }
+  }
+
+  void _addCandidateDomain(Set<String> output, String? raw) {
+    final String value = raw?.trim() ?? '';
+    if (value.isEmpty) {
+      return;
+    }
+
+    for (final String candidate in value.split(',')) {
+      final String normalized = candidate.trim();
+      if (normalized.isEmpty) {
+        continue;
+      }
+
+      String host = normalized;
+      if (host.contains('://')) {
+        final Uri? uri = Uri.tryParse(host);
+        if (uri != null && uri.host.isNotEmpty) {
+          host = uri.host.trim();
+        }
+      }
+      if (host.contains('@')) {
+        host = host.split('@').last.trim();
+      }
+      if (host.contains(':') && !host.contains(']')) {
+        host = host.split(':').first.trim();
+      }
+      if (host.contains('/')) {
+        host = host.split('/').first.trim();
+      }
+      if (host.contains('?')) {
+        host = host.split('?').first.trim();
+      }
+      if (host.startsWith('[') && host.endsWith(']') && host.length > 2) {
+        host = host.substring(1, host.length - 1);
+      }
+      if (host.startsWith('"') && host.endsWith('"') && host.length > 2) {
+        host = host.substring(1, host.length - 1).trim();
+      }
+
+      if (host.isEmpty || _isIpLiteral(host)) {
+        continue;
+      }
+      output.add(host.toLowerCase());
+    }
+  }
+
+  bool _isIpLiteral(String value) {
+    final String host = value.trim();
+    if (host.isEmpty) {
+      return false;
+    }
+    final RegExp ipv4Pattern = RegExp(r'^\d{1,3}(?:\.\d{1,3}){3}$');
+    if (ipv4Pattern.hasMatch(host)) {
+      return true;
+    }
+    if (host.contains(':')) {
+      return true;
+    }
+    return false;
   }
 
   List<String> _dedupeStrings(List<String> input) {

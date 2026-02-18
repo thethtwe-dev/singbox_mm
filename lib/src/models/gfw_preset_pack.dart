@@ -99,6 +99,7 @@ class GfwPresetPack {
         remoteDns: 'https://1.1.1.1/dns-query',
         directDns: 'local',
         enableDnsRouting: true,
+        enableFakeIp: true,
         enableDohFallback: true,
         dohFallbackDns: 'https://dns.google/dns-query',
       ),

@@ -1,10 +1,12 @@
 import '../../models/bypass_policy.dart';
 import '../../models/singbox_feature_settings.dart';
+import '../../models/vpn_profile.dart';
 
 class SingboxRouteRulesBuilder {
   const SingboxRouteRulesBuilder();
 
   List<Object?> build({
+    required VpnProfile profile,
     required BypassPolicy bypassPolicy,
     required SingboxFeatureSettings settings,
     required bool includeDnsRoutingRule,
@@ -28,15 +30,28 @@ class SingboxRouteRulesBuilder {
     });
 
     rules.add(<String, Object?>{
-      'ip_cidr': const <String>['172.19.0.2/32', 'fdfe:dcba:9876::2/128'],
+      'ip_cidr': const <String>['172.19.0.2/32'],
       'port': 53,
       'outbound': 'dns-out',
     });
     rules.add(<String, Object?>{
-      'ip_cidr': const <String>['172.19.0.2/32', 'fdfe:dcba:9876::2/128'],
+      'ip_cidr': const <String>['172.19.0.2/32'],
       'port': 853,
       'outbound': 'dns-out',
     });
+
+    rules.add(<String, Object?>{
+      'ip_cidr': const <String>['::/0'],
+      'outbound': 'block',
+    });
+    if (!_usesUdpNativeTransport(profile)) {
+      rules.add(<String, Object?>{
+        'network': 'udp',
+        'port': 443,
+        'outbound': 'block',
+      });
+      rules.add(<String, Object?>{'protocol': 'quic', 'outbound': 'block'});
+    }
 
     if (includeDnsRoutingRule) {
       rules.add(<String, Object?>{'protocol': 'dns', 'outbound': 'dns-out'});
@@ -95,5 +110,14 @@ class SingboxRouteRulesBuilder {
       }
     }
     return output.toList(growable: false);
+  }
+
+  bool _usesUdpNativeTransport(VpnProfile profile) {
+    if (profile.protocol == VpnProtocol.hysteria2 ||
+        profile.protocol == VpnProtocol.tuic ||
+        profile.protocol == VpnProtocol.wireguard) {
+      return true;
+    }
+    return profile.transport == VpnTransport.quic;
   }
 }

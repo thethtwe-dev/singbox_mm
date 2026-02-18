@@ -9,12 +9,9 @@ void main() {
   runApp(const SignboxVpnDemoApp());
 }
 
-const String _defaultConfigLink =
-    'vless://11111111-2222-3333-4444-555555555555@example.com:443?type=tcp&encryption=none&security=none#demo-node';
-const String _defaultSubscription =
-    'vless://11111111-2222-3333-4444-555555555555@edge-a.example.com:443?type=tcp&encryption=none&security=none#edge-a\n'
-    'vless://11111111-2222-3333-4444-555555555556@edge-b.example.com:8443?type=tcp&encryption=none&security=none#edge-b';
-const String _defaultPassphrase = 'sbmm-demo-passphrase';
+const String _defaultConfigLink = '';
+const String _defaultSubscription = '';
+const String _defaultPassphrase = '';
 
 class SignboxVpnDemoApp extends StatefulWidget {
   const SignboxVpnDemoApp({super.key});
@@ -62,6 +59,13 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
 
   GfwPresetPack get _selectedPreset =>
       GfwPresetPack.fromMode(_selectedPresetMode);
+
+  static const List<String> _commonAppProbeUrls = <String>[
+    'https://www.google.com/generate_204',
+    'https://www.facebook.com',
+    'https://telegram.org',
+    'https://www.viber.com',
+  ];
 
   @override
   void initState() {
@@ -603,12 +607,14 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
   }
 
   Future<void> _startVpn() async {
+    _ensureStartReady();
     await _vpn.start();
     await _refreshSnapshot();
     _setMessage('VPN start requested.');
   }
 
   Future<void> _startManaged() async {
+    _ensureStartReady();
     await _vpn.startManaged();
     await _refreshSnapshot();
     _setMessage('Managed mode started.');
@@ -767,6 +773,28 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
     _setMessage(
       'Probe: success=${probe.success} status=${probe.statusCode ?? '-'} latency=${probe.latencyMs ?? '-'}ms',
     );
+  }
+
+  Future<void> _probeCommonApps() async {
+    int success = 0;
+    final List<String> failures = <String>[];
+    for (final String url in _commonAppProbeUrls) {
+      final VpnConnectivityProbe probe = await _vpn.probeConnectivity(
+        url: url,
+        timeout: const Duration(seconds: 8),
+      );
+      if (probe.success) {
+        success++;
+      } else {
+        failures.add(
+          '$url => ${probe.error ?? 'status=${probe.statusCode ?? '-'}'}',
+        );
+      }
+    }
+    _setMessage('Common app probe: $success/${_commonAppProbeUrls.length} OK');
+    if (failures.isNotEmpty) {
+      _appendLog('common app probe failures: ${failures.join(' | ')}');
+    }
   }
 
   Future<void> _runDiagnostics() async {
@@ -1055,6 +1083,18 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
     );
   }
 
+  void _ensureStartReady() {
+    final bool hasProfile = _vpn.activeProfile != null;
+    final bool hasEndpointPool = _vpn.endpointPool.isNotEmpty;
+    final bool hasAppliedConfig = _lastAppliedConfig != null;
+    if (hasProfile || hasEndpointPool || hasAppliedConfig) {
+      return;
+    }
+    throw StateError(
+      'No profile/config is applied yet. Use Connect Basic/Hardened first.',
+    );
+  }
+
   Widget _buildSection(String title, List<Widget> children) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1069,6 +1109,10 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
   @override
   Widget build(BuildContext context) {
     final VpnProfile? active = _vpn.activeProfile;
+    final bool canStartRuntime =
+        active != null ||
+        _vpn.endpointPool.isNotEmpty ||
+        _lastAppliedConfig != null;
     final List<VpnEndpointHealth> endpointHealth = _vpn.endpointHealth;
     final String endpointHealthSummary = endpointHealth.isEmpty
         ? '-'
@@ -1106,6 +1150,15 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
                           'Detail: ${_stateDetails.detailCode ?? '-'} '
                           '/ validated=${_stateDetails.networkValidated?.toString() ?? 'unknown'}',
                         ),
+                        if (_state == VpnConnectionState.connected &&
+                            active == null)
+                          Text(
+                            'Warning: connected with no active profile metadata. '
+                            'Use Connect buttons to apply current config.',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
                         if (_stateDetails.privateDnsServerName != null)
                           Text(
                             'Private DNS: ${_stateDetails.privateDnsServerName}',
@@ -1238,8 +1291,12 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
                     enabled: configProtocolAllowed,
                   ),
                   _actionButton('Connect SBMM', _connectWithSbmmLink),
-                  _actionButton('Start', _startVpn),
-                  _actionButton('Start Managed', _startManaged),
+                  _actionButton('Start', _startVpn, enabled: canStartRuntime),
+                  _actionButton(
+                    'Start Managed',
+                    _startManaged,
+                    enabled: canStartRuntime,
+                  ),
                   _actionButton('Disconnect', _disconnect),
                   _actionButton('Restart', _restartVpn),
                   _actionButton('Reset Profile', _resetProfile),
@@ -1299,6 +1356,7 @@ class _SignboxVpnDemoAppState extends State<SignboxVpnDemoApp> {
                   _actionButton('Sync Runtime', _syncRuntime),
                   _actionButton('Ping Active', _pingActiveProfile),
                   _actionButton('Probe Connectivity', _probeConnectivity),
+                  _actionButton('Probe Common Apps', _probeCommonApps),
                   _actionButton('Run Diagnostics', _runDiagnostics),
                   _actionButton('Load Version', _loadVersion),
                   _actionButton('Core Capabilities', _loadCoreCapabilities),

@@ -144,4 +144,5 @@ void _resetTrafficTrackingInternal(SignboxVpn client) {
   client._lastTotalBytes = null;
   client._lastTrafficProgressAt = DateTime.now().toUtc();
   client._hasSeenTraffic = false;
+  client._consecutiveSilentPacketLossSignals = 0;
 }

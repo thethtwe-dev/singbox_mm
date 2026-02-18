@@ -1,18 +1,17 @@
 import '../../models/singbox_feature_settings.dart';
-import '../../models/traffic_throttle_policy.dart';
 
 class SingboxInboundBuilder {
   const SingboxInboundBuilder();
 
   List<Object?> build({
     required SingboxFeatureSettings settings,
-    required TrafficThrottlePolicy throttlePolicy,
     required String tunInterfaceName,
     required String tunInet4Address,
-    required bool disableIpv6Capture,
   }) {
     final List<Object?> inbounds = <Object?>[];
     final bool sniff = settings.route.resolveDestination;
+    const bool tunSniff = true;
+    const bool tunSniffOverrideDestination = true;
     final bool shareLan = settings.inbound.shareVpnInLocalNetwork;
 
     if (settings.inbound.serviceMode == SingboxServiceMode.vpn) {
@@ -25,27 +24,18 @@ class SingboxInboundBuilder {
       final bool splitTunnelingEnabled =
           settings.inbound.splitTunnelingEnabled ??
           (includePackages.isNotEmpty || excludePackages.isNotEmpty);
-      // Keep IPv6 TUN capture for strict-route VPN mode to avoid
-      // app-level IPv6 "No route to host" failures on stacks that prefer AAAA.
-      final bool captureIpv6InTun =
-          settings.route.ipv6RouteMode != SingboxIpv6RouteMode.disable
-          ? true
-          : !disableIpv6Capture && settings.inbound.strictRoute;
       final Map<String, Object?> tunInbound = <String, Object?>{
         'type': 'tun',
         'tag': 'tun-in',
         'interface_name': tunInterfaceName,
         'inet4_address': tunInet4Address,
         'auto_route': true,
-        'strict_route': settings.inbound.strictRoute,
+        'strict_route': true,
         'stack': _toTunStack(settings.inbound.tunImplementation),
-        'mtu': throttlePolicy.tunMtu,
-        'sniff': sniff,
+        'mtu': 1100,
+        'sniff': tunSniff,
+        'sniff_override_destination': tunSniffOverrideDestination,
       };
-
-      if (captureIpv6InTun) {
-        tunInbound['inet6_address'] = 'fdfe:dcba:9876::1/126';
-      }
       if (splitTunnelingEnabled && includePackages.isNotEmpty) {
         tunInbound['include_package'] = includePackages;
       }
@@ -85,7 +75,7 @@ class SingboxInboundBuilder {
   String _toTunStack(SingboxTunImplementation implementation) {
     switch (implementation) {
       case SingboxTunImplementation.system:
-        return 'system';
+        return 'gvisor';
       case SingboxTunImplementation.gvisor:
         return 'gvisor';
     }

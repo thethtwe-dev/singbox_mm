@@ -37,16 +37,19 @@ Future<void> _runHealthCheckTickInternal(SignboxVpn client) async {
     }
 
     bool hasPositiveHealthSignal = false;
+    bool connectivityProbeSucceeded = false;
     if (options.pingEnabled || options.connectivityProbeEnabled) {
       final (
         bool hasPositiveSignal,
         bool shouldCountFailure,
+        bool probeSucceeded,
       ) = await _runEndpointSignalChecksInternal(
         client,
         options,
         allowFailureCounting: !withinStartupGrace,
       );
       hasPositiveHealthSignal = hasPositiveSignal;
+      connectivityProbeSucceeded = probeSucceeded;
 
       if (shouldCountFailure) {
         await _markEndpointFailureAndMaybeFailoverInternal(client, options);
@@ -58,6 +61,7 @@ Future<void> _runHealthCheckTickInternal(SignboxVpn client) async {
       client,
       options,
       hasPositiveHealthSignal: hasPositiveHealthSignal,
+      connectivityProbeSucceeded: connectivityProbeSucceeded,
       allowFailureCounting: !withinStartupGrace,
     );
   } on Object {
@@ -69,24 +73,8 @@ bool _shouldRunActiveHealthChecksInternal(
   SignboxVpn client,
   VpnHealthCheckOptions options,
 ) {
-  final int baseIntervalMs = options.checkInterval.inMilliseconds;
-  if (baseIntervalMs < 1000) {
-    client._healthTickCounter++;
-    return true;
-  }
-  if (client._activeEndpointIndex < 0 ||
-      client._activeEndpointIndex >= client._endpointHealthStates.length) {
-    client._healthTickCounter++;
-    return true;
-  }
-
-  final _EndpointHealthState state =
-      client._endpointHealthStates[client._activeEndpointIndex];
-  final bool stable =
-      state.consecutiveFailures == 0 && state.lastSuccessAt != null;
-  final int stride = stable ? 3 : 1;
   client._healthTickCounter++;
-  return client._healthTickCounter % stride == 0;
+  return true;
 }
 
 Future<void> _markEndpointFailureAndMaybeFailoverInternal(

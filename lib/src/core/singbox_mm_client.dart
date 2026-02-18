@@ -130,6 +130,7 @@ class SignboxVpn {
   int? _lastTotalBytes;
   DateTime? _lastTrafficProgressAt;
   bool _hasSeenTraffic = false;
+  int _consecutiveSilentPacketLossSignals = 0;
   DateTime? _lastConnectedAt;
 
   Stream<VpnConnectionState> get stateStream => _platform.stateStream;

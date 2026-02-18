@@ -187,6 +187,32 @@ void main() {
     expect((config['route'] as Map<String, dynamic>)['final'], 'proxy-main');
   });
 
+  test('generated config has no geosite/geoip db dependencies', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vless(
+        tag: 'proxy-main',
+        server: 'edge.example.com',
+        serverPort: 443,
+        uuid: '11111111-2222-3333-4444-555555555555',
+      ),
+      bypassPolicy: const BypassPolicy(
+        directDomains: <String>['google.com', 'facebook.com'],
+        directCidrs: <String>['10.0.0.0/8'],
+      ),
+    );
+
+    final String configJson = fakePlatform.latestConfig ?? '';
+    final String lowered = configJson.toLowerCase();
+    expect(lowered.contains('geosite'), isFalse);
+    expect(lowered.contains('geoip'), isFalse);
+  });
+
   test('applyProfile maps dashboard settings to sing-box config', () async {
     final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
     SignboxVpnPlatform.instance = fakePlatform;
@@ -257,10 +283,12 @@ void main() {
                 )
                 as Map<dynamic, dynamic>)
             .cast<String, dynamic>();
-    expect(tunInbound['strict_route'], isFalse);
+    expect(tunInbound['strict_route'], isTrue);
     expect(tunInbound['stack'], 'gvisor');
     expect(tunInbound['sniff'], isTrue);
-    expect(tunInbound['inet6_address'], isNotNull);
+    expect(tunInbound['sniff_override_destination'], isTrue);
+    expect(tunInbound['mtu'], 1100);
+    expect(tunInbound.containsKey('inet6_address'), isFalse);
     expect(tunInbound['include_package'], <String>['com.example.browser']);
     expect(tunInbound['exclude_package'], <String>['com.example.bank']);
 
@@ -343,6 +371,28 @@ void main() {
       ),
       isTrue,
     );
+    expect(
+      rules.whereType<Map<String, dynamic>>().any((Map<String, dynamic> rule) {
+        return rule['outbound'] == 'block' &&
+            (rule['ip_cidr'] as List<dynamic>?)?.contains('::/0') == true;
+      }),
+      isTrue,
+    );
+    expect(
+      rules.whereType<Map<String, dynamic>>().any((Map<String, dynamic> rule) {
+        return rule['outbound'] == 'block' &&
+            rule['network'] == 'udp' &&
+            rule['port'] == 443;
+      }),
+      isTrue,
+    );
+    expect(
+      rules.whereType<Map<String, dynamic>>().any(
+        (Map<String, dynamic> rule) =>
+            rule['outbound'] == 'block' && rule['protocol'] == 'quic',
+      ),
+      isTrue,
+    );
 
     final Map<String, dynamic> experimental =
         config['experimental'] as Map<String, dynamic>;
@@ -408,7 +458,173 @@ void main() {
     expect(tls['server_name'], 'hy2.example.com');
     expect(tls.containsKey('fragment'), isFalse);
     expect(tls.containsKey('utls'), isFalse);
+
+    final List<dynamic> routeRules =
+        (config['route'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    expect(
+      routeRules.whereType<Map<String, dynamic>>().any(
+        (Map<String, dynamic> rule) =>
+            rule['outbound'] == 'block' &&
+            rule['network'] == 'udp' &&
+            rule['port'] == 443,
+      ),
+      isFalse,
+    );
+    expect(
+      routeRules.whereType<Map<String, dynamic>>().any(
+        (Map<String, dynamic> rule) =>
+            rule['outbound'] == 'block' && rule['protocol'] == 'quic',
+      ),
+      isFalse,
+    );
   });
+
+  test('vless quic transport keeps udp/quic route paths unblocked', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vless(
+        tag: 'vless-quic-path',
+        server: 'edge.example.com',
+        serverPort: 443,
+        uuid: '11111111-2222-3333-4444-555555555555',
+        transport: VpnTransport.quic,
+        tls: const TlsOptions(enabled: true),
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> routeRules =
+        (config['route'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    expect(
+      routeRules.whereType<Map<String, dynamic>>().any(
+        (Map<String, dynamic> rule) =>
+            rule['outbound'] == 'block' &&
+            rule['network'] == 'udp' &&
+            rule['port'] == 443,
+      ),
+      isFalse,
+    );
+    expect(
+      routeRules.whereType<Map<String, dynamic>>().any(
+        (Map<String, dynamic> rule) =>
+            rule['outbound'] == 'block' && rule['protocol'] == 'quic',
+      ),
+      isFalse,
+    );
+  });
+
+  test('vless outbound forces multiplex disabled for stability', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vless(
+        tag: 'vless-mux-stable',
+        server: 'edge.example.com',
+        serverPort: 443,
+        uuid: '11111111-2222-3333-4444-555555555555',
+        tls: const TlsOptions(enabled: true),
+      ),
+      throttlePolicy: const TrafficThrottlePolicy(
+        enableMultiplex: true,
+        multiplexPadding: true,
+        multiplexConnections: 8,
+        multiplexMinStreams: 4,
+        multiplexMaxStreams: 16,
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'vless-mux-stable',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    expect(outbound['type'], 'vless');
+    expect(outbound['multiplex'], <String, dynamic>{'enabled': false});
+  });
+
+  test(
+    'vless ws with http/1.1-only alpn strips utls to prevent h2 negotiation',
+    () async {
+      // Regression test: when transport=ws and alpn=http/1.1 only, sing-box's
+      // uTLS fingerprint would override the explicit alpn list with Chrome's
+      // built-in one (which includes h2). The CDN then negotiates HTTP/2,
+      // breaking the WebSocket upgrade. The config builder must strip `utls`
+      // in this case so sing-box honours the explicit alpn=[http/1.1].
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.vless(
+          tag: 'vless-ws-cdn',
+          server: 'mpt.com.mm',
+          serverPort: 443,
+          uuid: '3de0ab21-26cb-42c1-f835-a26b12ebf782',
+          transport: VpnTransport.ws,
+          websocketPath: '/',
+          websocketHeaders: const <String, String>{
+            'Host': 'safety.prosis69.com',
+          },
+          tls: const TlsOptions(
+            enabled: true,
+            serverName: 'safety.prosis69.com',
+            utlsFingerprint: 'chrome',
+            alpn: <String>['http/1.1'],
+          ),
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'vless-ws-cdn',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+
+      expect(outbound['type'], 'vless');
+
+      final Map<String, dynamic> tls =
+          (outbound['tls'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+      expect(tls['enabled'], isTrue);
+      expect(tls['server_name'], 'safety.prosis69.com');
+      expect(tls['alpn'], <String>['http/1.1']);
+      // utls must be absent so sing-box uses the explicit alpn list
+      expect(tls.containsKey('utls'), isFalse);
+
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      expect(transport['type'], 'ws');
+      expect(transport['path'], '/');
+      expect(
+        (transport['headers'] as Map<dynamic, dynamic>)['Host'],
+        'safety.prosis69.com',
+      );
+    },
+  );
 
   test('dns provider preset maps to expected resolver endpoints', () async {
     final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
@@ -622,6 +838,10 @@ void main() {
     expect(tags.contains('dns-fakeip'), isTrue);
     expect(tags.contains('dns-remote-fallback'), isTrue);
     expect((dns['fakeip'] as Map<String, dynamic>)['enabled'], isTrue);
+    expect(
+      (dns['fakeip'] as Map<String, dynamic>).containsKey('inet6_range'),
+      isFalse,
+    );
     expect(dns['final'], 'dns-remote');
 
     final Map<String, dynamic> fallbackServer =
@@ -645,7 +865,123 @@ void main() {
       }),
       isTrue,
     );
+    expect(
+      rules.whereType<Map<String, dynamic>>().any((Map<String, dynamic> rule) {
+        return rule['server'] == 'dns-fakeip' &&
+            (rule['query_type'] as List<dynamic>?)?.length == 1 &&
+            (rule['query_type'] as List<dynamic>?)?.contains('A') == true;
+      }),
+      isTrue,
+    );
   });
+
+  test(
+    'dns keeps outbound domain bootstrap on dns-direct before fakeip catch-all',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.vless(
+          tag: 'domain-bootstrap',
+          server: 'mpt.com.mm',
+          serverPort: 443,
+          uuid: '3de0ab21-26cb-42c1-f835-a26b12ebf782',
+          transport: VpnTransport.ws,
+          websocketPath: '/',
+          websocketHeaders: const <String, String>{
+            'Host': 'safety.prosis69.com',
+          },
+          tls: const TlsOptions(
+            enabled: true,
+            serverName: 'safety.prosis69.com',
+            alpn: <String>['http/1.1'],
+          ),
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final Map<String, dynamic> dns = config['dns'] as Map<String, dynamic>;
+      final List<dynamic> rules = dns['rules'] as List<dynamic>;
+      int bootstrapRuleIndex = -1;
+      int fakeIpRuleIndex = -1;
+
+      for (int i = 0; i < rules.length; i++) {
+        final dynamic raw = rules[i];
+        if (raw is! Map<String, dynamic>) {
+          continue;
+        }
+        final List<dynamic>? domains = raw['domain'] as List<dynamic>?;
+        if (domains != null &&
+            raw['server'] == 'dns-direct' &&
+            domains.contains('mpt.com.mm')) {
+          bootstrapRuleIndex = i;
+        }
+        final List<dynamic>? queryType = raw['query_type'] as List<dynamic>?;
+        if (raw['server'] == 'dns-fakeip' &&
+            queryType != null &&
+            queryType.contains('A')) {
+          fakeIpRuleIndex = i;
+        }
+      }
+
+      expect(bootstrapRuleIndex, greaterThanOrEqualTo(0));
+      expect(fakeIpRuleIndex, greaterThanOrEqualTo(0));
+      expect(bootstrapRuleIndex, lessThan(fakeIpRuleIndex));
+    },
+  );
+
+  test(
+    'dns bootstrap extracts domain hints from transport extra fields',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.vless(
+          tag: 'domain-bootstrap-extra',
+          server: '203.0.113.18',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555555',
+          transport: VpnTransport.grpc,
+          grpcServiceName: 'grpc-service',
+          tls: const TlsOptions(enabled: true),
+          extra: const <String, Object?>{
+            'authority': 'grpc.edge.example.com',
+            'headers': <String, String>{'Host': 'cdn.edge.example.com'},
+          },
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> rules =
+          (config['dns'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+
+      final Map<String, dynamic>? bootstrapRule = rules
+          .whereType<Map<String, dynamic>>()
+          .cast<Map<String, dynamic>?>()
+          .firstWhere(
+            (Map<String, dynamic>? rule) =>
+                rule != null &&
+                rule['server'] == 'dns-direct' &&
+                rule['domain'] is List<dynamic>,
+            orElse: () => null,
+          );
+
+      expect(bootstrapRule, isNotNull);
+      final List<dynamic> domains = bootstrapRule!['domain'] as List<dynamic>;
+      expect(domains.contains('grpc.edge.example.com'), isTrue);
+      expect(domains.contains('cdn.edge.example.com'), isTrue);
+    },
+  );
 
   test(
     'hysteria2 prefers direct doh fallback as final dns server for resilience',
@@ -695,7 +1031,7 @@ void main() {
   );
 
   test(
-    'strict-route mode keeps inet6 TUN address when ipv6 route mode is disabled',
+    'strict-route mode omits inet6 TUN address when ipv6 route mode is disabled',
     () async {
       final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
       SignboxVpnPlatform.instance = fakePlatform;
@@ -725,7 +1061,7 @@ void main() {
                   )
                   as Map<dynamic, dynamic>)
               .cast<String, dynamic>();
-      expect(tunInbound['inet6_address'], isNotNull);
+      expect(tunInbound.containsKey('inet6_address'), isFalse);
     },
   );
 
@@ -775,7 +1111,7 @@ void main() {
       expect(hy2Outbound['domain_strategy'], 'ipv4_only');
 
       final Map<String, dynamic> dns = config['dns'] as Map<String, dynamic>;
-      expect(dns['strategy'], 'ipv4_only');
+      expect(dns['strategy'], 'prefer_ipv4');
       final List<dynamic> servers = dns['servers'] as List<dynamic>;
       final Map<String, dynamic> remoteDns =
           (servers.firstWhere(
@@ -785,7 +1121,7 @@ void main() {
                   )
                   as Map<dynamic, dynamic>)
               .cast<String, dynamic>();
-      expect(remoteDns['strategy'], 'ipv4_only');
+      expect(remoteDns['strategy'], 'prefer_ipv4');
     },
   );
 

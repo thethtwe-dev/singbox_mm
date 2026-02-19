@@ -43,7 +43,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  singbox_mm: ^0.1.7
+  singbox_mm: ^0.1.8
 ```
 
 For local development in a monorepo, you can still use a path dependency:
@@ -262,6 +262,11 @@ WebSocket compatibility notes:
 - Early Data is disabled by default in generated WS transport (`max_early_data: 0`).
 - `path` query hints used by some share links (`ed` / `eh`) are sanitized out to avoid strict CDN `404` upgrades.
 - For strict TLS endpoints, `alpn=none` can be used in links to produce empty ALPN (`tls.alpn=[]`).
+
+xHTTP compatibility notes:
+- `net=xhttp` links are normalized to sing-box `httpupgrade` transport for compatibility.
+- For remapped xHTTP/httpupgrade TLS paths, ALPN is enforced to HTTP/1.1 and `tls.utls` is removed to reduce framing/protocol mismatches.
+- If your server is provisioned for Xray-only split-http behavior and still rejects sing-box remapped xHTTP, use an explicitly compatible transport profile on that endpoint (`ws` or `grpc`) or adjust server transport mode.
 
 Parser coverage includes:
 - `sbmm://` (encrypted wrapper for a supported inner link)

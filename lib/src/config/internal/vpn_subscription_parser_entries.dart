@@ -17,6 +17,8 @@ _SubscriptionEntriesResult _parseSubscriptionEntries(
   String payload, {
   required bool deduplicate,
   String? sbmmPassphrase,
+  Set<VpnTransport>? allowedTransports,
+  Set<VpnProtocol>? allowedProtocols,
 }) {
   final List<ParsedVpnConfig> entries = <ParsedVpnConfig>[];
   final List<VpnProfile> profiles = <VpnProfile>[];
@@ -34,6 +36,17 @@ _SubscriptionEntriesResult _parseSubscriptionEntries(
         entry,
         sbmmPassphrase: sbmmPassphrase,
       );
+
+      // Apply transport/protocol filters before dedup and inclusion.
+      if (allowedTransports != null &&
+          !allowedTransports.contains(parsed.profile.transport)) {
+        continue;
+      }
+      if (allowedProtocols != null &&
+          !allowedProtocols.contains(parsed.profile.protocol)) {
+        continue;
+      }
+
       final String dedupeKey = VpnSubscriptionParser._buildDedupeKey(
         parsed.profile,
       );

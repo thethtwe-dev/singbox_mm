@@ -1,4 +1,30 @@
+## 0.1.8
+
+- **Fixed:** `net=xhttp` share links are now remapped to sing-box
+  `httpupgrade` transport consistently for compatibility with the current
+  runtime behavior.
+- **Fixed:** remapped xHTTP/httpupgrade TLS handshake normalization is hardened:
+  ALPN is enforced to `http/1.1` and `tls.utls` is removed to reduce
+  framing/protocol mismatch failures.
+- **Fixed:** xHTTP transport host/path/method normalization is strengthened to
+  avoid malformed requests and strict-CDN `404`/protocol edge cases.
+- **Added:** `VpnCoreCapabilities.supportsTransport(VpnTransport)` — query whether a
+  transport is natively supported by the current sing-box build.
+  Also exposes `supportsAllTransports()`, `unsupportedTransports`, and a
+  `supportedTransports` list (defaults to tcp, ws, grpc, http, httpUpgrade).
+- **Added:** `VpnSubscriptionParser.parse()` now accepts optional `allowedTransports`
+  and `allowedProtocols` filter sets. Profiles outside the allowed sets are silently
+  skipped, enabling callers to exclude unsupported transports at parse time.
+- **Chore:** Removed verbose generated-config runtime prints to avoid leaking
+  sensitive profile fields in device logs.
+- **Chore:** Added `libbox_backup/` to `.pubignore` to keep publish artifacts minimal.
+- **Compatibility note:** xHTTP behavior can still vary across server panels and
+  cores. If a server is provisioned for Xray-only split-http semantics and
+  rejects remapped sing-box xHTTP/httpupgrade behavior, use an explicitly
+  compatible transport profile (`ws` or `grpc`) on that endpoint.
+
 ## 0.1.7
+
 
 - Deep parser hardening release across `vless`, `vmess`, `trojan`, and `shadowsocks`.
 - Added robust `xhttp`/`httpupgrade` handling for TLS and non-TLS links (including port 80 plain HTTP cases).

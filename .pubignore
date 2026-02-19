@@ -5,6 +5,7 @@ build/
 *.iml
 
 logs*.txt
+libbox_backup/
 
 test/
 tool/

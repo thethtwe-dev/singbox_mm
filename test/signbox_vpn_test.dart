@@ -670,7 +670,63 @@ void main() {
     },
   );
 
-  test('vmess xhttp link maps to httpupgrade transport without tls', () async {
+  test(
+    'vmess xhttp link remaps to httpupgrade transport without tls',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      final String vmessJson = jsonEncode(<String, String>{
+        'v': '2',
+        'ps': 'vmess-xhttp',
+        'add': 'app.example.com',
+        'port': '80',
+        'id': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        'net': 'xhttp',
+        'path': '/QmCus87aYKFEQyuUX7rUfHXH4',
+        'host': 'app.example.com',
+        'tls': '',
+        'security': 'none',
+        'type': 'none',
+      });
+      final String vmessLink =
+          'vmess://${base64.encode(utf8.encode(vmessJson))}';
+
+      await vpn.connectManualConfigLink(configLink: vmessLink);
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'vmess-xhttp',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+
+      expect(outbound['type'], 'vmess');
+      expect(outbound['server'], 'app.example.com');
+      expect(outbound['server_port'], 80);
+      expect(outbound.containsKey('tls'), isFalse);
+
+      expect(transport['type'], 'httpupgrade');
+      expect(transport['path'], '/QmCus87aYKFEQyuUX7rUfHXH4');
+      expect(transport['host'], 'app.example.com');
+      expect(transport.containsKey('method'), isFalse);
+      // httpupgrade always injects Host + User-Agent headers.
+      expect(transport.containsKey('headers'), isTrue);
+    },
+  );
+
+  test('vmess xhttp with h3 alpn remaps to httpupgrade transport', () async {
     final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
     SignboxVpnPlatform.instance = fakePlatform;
 
@@ -679,16 +735,16 @@ void main() {
 
     final String vmessJson = jsonEncode(<String, String>{
       'v': '2',
-      'ps': 'vmess-xhttp',
+      'ps': 'vmess-xhttp-h3',
       'add': 'app.example.com',
-      'port': '80',
+      'port': '443',
       'id': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       'net': 'xhttp',
       'path': '/QmCus87aYKFEQyuUX7rUfHXH4',
       'host': 'app.example.com',
-      'tls': '',
-      'security': 'none',
-      'type': 'none',
+      'tls': 'tls',
+      'security': 'tls',
+      'alpn': 'h3,h2',
     });
     final String vmessLink = 'vmess://${base64.encode(utf8.encode(vmessJson))}';
 
@@ -701,7 +757,183 @@ void main() {
         (outbounds.firstWhere(
                   (dynamic item) =>
                       item is Map<String, dynamic> &&
-                      item['tag'] == 'vmess-xhttp',
+                      item['tag'] == 'vmess-xhttp-h3',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> transport =
+        (outbound['transport'] as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> tls = (outbound['tls'] as Map<dynamic, dynamic>)
+        .cast<String, dynamic>();
+
+    expect(outbound['type'], 'vmess');
+    expect(outbound['server_port'], 443);
+    expect(transport['type'], 'httpupgrade');
+    expect(transport['path'], '/QmCus87aYKFEQyuUX7rUfHXH4');
+    expect(transport['host'], 'app.example.com');
+    expect(transport.containsKey('method'), isFalse);
+    // httpupgrade uses http/1.1 — _applyHttpUpgradeAlpnDefaults forces http/1.1.
+    expect(tls['alpn'], <String>['http/1.1']);
+  });
+
+  test(
+    'vmess xhttp with tls and no hints remaps to httpupgrade transport',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      final String vmessJson = jsonEncode(<String, String>{
+        'v': '2',
+        'ps': 'vmess-xhttp-tls-default',
+        'add': 'app.example.com',
+        'port': '443',
+        'id': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        'net': 'xhttp',
+        'path': '/QmCus87aYKFEQyuUX7rUfHXH4',
+        'host': 'app.example.com',
+        'tls': 'tls',
+        'security': 'tls',
+      });
+      final String vmessLink =
+          'vmess://${base64.encode(utf8.encode(vmessJson))}';
+
+      await vpn.connectManualConfigLink(configLink: vmessLink);
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'vmess-xhttp-tls-default',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> tls =
+          (outbound['tls'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+
+      expect(outbound['type'], 'vmess');
+      expect(outbound['server_port'], 443);
+      expect(transport['type'], 'httpupgrade');
+      expect(transport['path'], '/QmCus87aYKFEQyuUX7rUfHXH4');
+      expect(transport['host'], 'app.example.com');
+      expect(transport.containsKey('method'), isFalse);
+      // No ALPN hint → _applyHttpUpgradeAlpnDefaults forces http/1.1.
+      expect(tls['alpn'], <String>['http/1.1']);
+    },
+  );
+
+  test(
+    'vmess xhttp with explicit mode hint remaps to httpupgrade transport',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      final String vmessJson = jsonEncode(<String, String>{
+        'v': '2',
+        'ps': 'vmess-xhttp-mode-h3',
+        'add': 'app.example.com',
+        'port': '443',
+        'id': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        'net': 'xhttp',
+        'path': '/QmCus87aYKFEQyuUX7rUfHXH4',
+        'host': 'app.example.com',
+        'tls': 'tls',
+        'security': 'tls',
+        'alpn': 'h3,h2',
+        'mode': 'h3',
+      });
+      final String vmessLink =
+          'vmess://${base64.encode(utf8.encode(vmessJson))}';
+
+      await vpn.connectManualConfigLink(configLink: vmessLink);
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'vmess-xhttp-mode-h3',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> tls =
+          (outbound['tls'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+
+      expect(outbound['type'], 'vmess');
+      expect(transport['type'], 'httpupgrade');
+      expect(transport['path'], '/QmCus87aYKFEQyuUX7rUfHXH4');
+      expect(transport['host'], 'app.example.com');
+      expect(transport.containsKey('method'), isFalse);
+      // _applyHttpUpgradeAlpnDefaults overrides any ALPN to ['http/1.1'].
+      expect(tls['alpn'], <String>['http/1.1']);
+    },
+  );
+
+  test('builder normalizes xhttp transport alias to httpupgrade', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vless(
+        tag: 'proxy-main',
+        server: 'edge.example.com',
+        serverPort: 443,
+        uuid: '11111111-2222-3333-4444-555555555555',
+        transport: VpnTransport.httpUpgrade,
+        websocketPath: '/ws',
+        websocketHeaders: const <String, String>{'Host': 'edge.example.com'},
+      ),
+      featureSettings: SingboxFeatureSettings(
+        rawConfigPatch: <String, Object?>{
+          'outbounds': <Object?>[
+            <String, Object?>{
+              'tag': 'proxy-main',
+              'type': 'vless',
+              'server': 'edge.example.com',
+              'server_port': 443,
+              'uuid': '11111111-2222-3333-4444-555555555555',
+              'transport': <String, Object?>{
+                'type': 'xhttp',
+                'path': 'ws',
+                'host': 'edge.example.com',
+              },
+            },
+            <String, Object?>{'type': 'direct', 'tag': 'direct'},
+            <String, Object?>{'type': 'block', 'tag': 'block'},
+            <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
+          ],
+        },
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'proxy-main',
                 )
                 as Map<dynamic, dynamic>)
             .cast<String, dynamic>();
@@ -709,15 +941,352 @@ void main() {
         (outbound['transport'] as Map<dynamic, dynamic>)
             .cast<String, dynamic>();
 
-    expect(outbound['type'], 'vmess');
-    expect(outbound['server'], 'app.example.com');
-    expect(outbound['server_port'], 80);
-    expect(outbound.containsKey('tls'), isFalse);
-
     expect(transport['type'], 'httpupgrade');
-    expect(transport['path'], '/QmCus87aYKFEQyuUX7rUfHXH4');
-    expect(transport['host'], 'app.example.com');
+    expect(transport['path'], '/ws');
+    expect(transport['host'], 'edge.example.com');
+    expect(transport.containsKey('method'), isFalse);
   });
+
+  test(
+    'builder resolves httpupgrade host from tls server_name fallback',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.vless(
+          tag: 'proxy-main',
+          server: 'edge.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555555',
+          transport: VpnTransport.httpUpgrade,
+          websocketPath: '/ws',
+          tls: const TlsOptions(enabled: true, serverName: 'cdn.example.com'),
+        ),
+        featureSettings: SingboxFeatureSettings(
+          rawConfigPatch: <String, Object?>{
+            'outbounds': <Object?>[
+              <String, Object?>{
+                'tag': 'proxy-main',
+                'type': 'vless',
+                'server': 'edge.example.com',
+                'server_port': 443,
+                'uuid': '11111111-2222-3333-4444-555555555555',
+                'transport': <String, Object?>{
+                  'type': 'httpupgrade',
+                  'path': '/ws',
+                },
+                'tls': <String, Object?>{
+                  'enabled': true,
+                  'server_name': 'cdn.example.com',
+                },
+              },
+              <String, Object?>{'type': 'direct', 'tag': 'direct'},
+              <String, Object?>{'type': 'block', 'tag': 'block'},
+              <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
+            ],
+          },
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'proxy-main',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+
+      expect(transport['host'], 'cdn.example.com');
+      expect(
+        (transport['headers'] as Map<dynamic, dynamic>)['Host'],
+        'cdn.example.com',
+      );
+      expect(
+        (transport['headers'] as Map<dynamic, dynamic>)['User-Agent'],
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      );
+    },
+  );
+
+  test(
+    'builder resolves httpupgrade host from outbound sni fallback',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.vless(
+          tag: 'proxy-main',
+          server: 'edge.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555555',
+          transport: VpnTransport.httpUpgrade,
+          websocketPath: '/ws',
+          tls: const TlsOptions(enabled: true),
+        ),
+        featureSettings: SingboxFeatureSettings(
+          rawConfigPatch: <String, Object?>{
+            'outbounds': <Object?>[
+              <String, Object?>{
+                'tag': 'proxy-main',
+                'type': 'vless',
+                'server': 'edge.example.com',
+                'server_port': 443,
+                'uuid': '11111111-2222-3333-4444-555555555555',
+                'sni': 'sni.edge.example.com',
+                'transport': <String, Object?>{
+                  'type': 'httpupgrade',
+                  'path': '/ws',
+                },
+                'tls': <String, Object?>{'enabled': true},
+              },
+              <String, Object?>{'type': 'direct', 'tag': 'direct'},
+              <String, Object?>{'type': 'block', 'tag': 'block'},
+              <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
+            ],
+          },
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'proxy-main',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> transport =
+          (outbound['transport'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+
+      expect(transport['host'], 'sni.edge.example.com');
+      expect(
+        (transport['headers'] as Map<dynamic, dynamic>)['Host'],
+        'sni.edge.example.com',
+      );
+    },
+  );
+
+  test('builder normalizes httpupgrade path to single leading slash', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vmess(
+        tag: 'proxy-main',
+        server: 'edge.example.com',
+        serverPort: 80,
+        uuid: '11111111-2222-3333-4444-555555555555',
+        transport: VpnTransport.httpUpgrade,
+        websocketPath: '/QmCus',
+        tls: const TlsOptions(enabled: false),
+      ),
+      featureSettings: SingboxFeatureSettings(
+        rawConfigPatch: <String, Object?>{
+          'outbounds': <Object?>[
+            <String, Object?>{
+              'tag': 'proxy-main',
+              'type': 'vmess',
+              'server': 'edge.example.com',
+              'server_port': 80,
+              'uuid': '11111111-2222-3333-4444-555555555555',
+              'transport': <String, Object?>{
+                'type': 'httpupgrade',
+                'path': '//QmCus',
+                'host': 'edge.example.com',
+              },
+              'security': 'none',
+            },
+            <String, Object?>{'type': 'direct', 'tag': 'direct'},
+            <String, Object?>{'type': 'block', 'tag': 'block'},
+            <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
+          ],
+        },
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'proxy-main',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> transport =
+        (outbound['transport'] as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+
+    expect(transport['path'], '/QmCus');
+  });
+
+  test('httpupgrade tls forces http/1.1-only alpn', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vless(
+        tag: 'proxy-main',
+        server: 'edge.example.com',
+        serverPort: 443,
+        uuid: '11111111-2222-3333-4444-555555555555',
+        transport: VpnTransport.httpUpgrade,
+        websocketPath: '/ws',
+        tls: const TlsOptions(
+          enabled: true,
+          serverName: 'edge.example.com',
+          alpn: <String>['h3', 'h2'],
+        ),
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'proxy-main',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> tls = (outbound['tls'] as Map<dynamic, dynamic>)
+        .cast<String, dynamic>();
+
+    expect(tls['alpn'], <String>['http/1.1']);
+    expect(tls.containsKey('utls'), isFalse);
+  });
+
+  test('httpupgrade tls defaults alpn when empty', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+
+    final SignboxVpn vpn = SignboxVpn();
+    await vpn.initialize(const SingboxRuntimeOptions());
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vless(
+        tag: 'proxy-main',
+        server: 'edge.example.com',
+        serverPort: 443,
+        uuid: '11111111-2222-3333-4444-555555555555',
+        transport: VpnTransport.httpUpgrade,
+        websocketPath: '/ws',
+        tls: const TlsOptions(
+          enabled: true,
+          serverName: 'edge.example.com',
+          alpn: <String>[],
+        ),
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        (outbounds.firstWhere(
+                  (dynamic item) =>
+                      item is Map<String, dynamic> &&
+                      item['tag'] == 'proxy-main',
+                )
+                as Map<dynamic, dynamic>)
+            .cast<String, dynamic>();
+    final Map<String, dynamic> tls = (outbound['tls'] as Map<dynamic, dynamic>)
+        .cast<String, dynamic>();
+
+    expect(tls['alpn'], <String>['http/1.1']);
+  });
+
+  test(
+    'httpupgrade on 443 recreates tls and enforces http/1.1 alpn when missing',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+
+      final SignboxVpn vpn = SignboxVpn();
+      await vpn.initialize(const SingboxRuntimeOptions());
+
+      await vpn.applyProfile(
+        profile: VpnProfile.vmess(
+          tag: 'proxy-main',
+          server: 'edge.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555555',
+          transport: VpnTransport.httpUpgrade,
+          websocketPath: '/ws',
+          tls: const TlsOptions(enabled: true, serverName: 'edge.example.com'),
+        ),
+        featureSettings: SingboxFeatureSettings(
+          rawConfigPatch: <String, Object?>{
+            'outbounds': <Object?>[
+              <String, Object?>{
+                'tag': 'proxy-main',
+                'type': 'vmess',
+                'server': 'edge.example.com',
+                'server_port': 443,
+                'uuid': '11111111-2222-3333-4444-555555555555',
+                'transport': <String, Object?>{
+                  'type': 'httpupgrade',
+                  'path': '/ws',
+                  'host': 'edge.example.com',
+                },
+              },
+              <String, Object?>{'type': 'direct', 'tag': 'direct'},
+              <String, Object?>{'type': 'block', 'tag': 'block'},
+              <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
+            ],
+          },
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          (outbounds.firstWhere(
+                    (dynamic item) =>
+                        item is Map<String, dynamic> &&
+                        item['tag'] == 'proxy-main',
+                  )
+                  as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+      final Map<String, dynamic> tls =
+          (outbound['tls'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+
+      expect(tls['enabled'], isTrue);
+      expect(tls['alpn'], <String>['http/1.1']);
+      expect(tls['server_name'], 'edge.example.com');
+    },
+  );
 
   test('grpc link maps authority and service name aliases', () async {
     final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
@@ -1753,6 +2322,110 @@ void main() {
         jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
     final Map<String, dynamic> outbound =
         (config['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
+    expect(outbound.containsKey('tls'), isFalse);
+  });
+
+  test(
+    'builder strips leaked tls object for security none outbounds',
+    () async {
+      final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+      SignboxVpnPlatform.instance = fakePlatform;
+      final SignboxVpn vpn = SignboxVpn();
+
+      await vpn.applyProfile(
+        profile: VpnProfile.vless(
+          tag: 'proxy-main',
+          server: 'edge.example.com',
+          serverPort: 443,
+          uuid: '11111111-2222-3333-4444-555555555555',
+          tls: const TlsOptions(enabled: false),
+        ),
+        featureSettings: SingboxFeatureSettings(
+          rawConfigPatch: <String, Object?>{
+            'outbounds': <Object?>[
+              <String, Object?>{
+                'tag': 'proxy-main',
+                'type': 'vless',
+                'server': 'edge.example.com',
+                'server_port': 443,
+                'uuid': '11111111-2222-3333-4444-555555555555',
+                'tls': <String, Object?>{},
+              },
+              <String, Object?>{'type': 'direct', 'tag': 'direct'},
+              <String, Object?>{'type': 'block', 'tag': 'block'},
+              <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
+            ],
+          },
+        ),
+      );
+
+      final Map<String, dynamic> config =
+          jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+      final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+      final Map<String, dynamic> outbound =
+          outbounds.firstWhere((dynamic item) {
+                return item is Map<String, dynamic> &&
+                    item['tag'] == 'proxy-main';
+              })
+              as Map<String, dynamic>;
+
+      expect(outbound.containsKey('tls'), isFalse);
+    },
+  );
+
+  test('builder strips tls when outbound security is none', () async {
+    final FakeSignboxVpnPlatform fakePlatform = FakeSignboxVpnPlatform();
+    SignboxVpnPlatform.instance = fakePlatform;
+    final SignboxVpn vpn = SignboxVpn();
+
+    await vpn.applyProfile(
+      profile: VpnProfile.vless(
+        tag: 'proxy-main',
+        server: 'edge.example.com',
+        serverPort: 80,
+        uuid: '11111111-2222-3333-4444-555555555555',
+        transport: VpnTransport.httpUpgrade,
+        websocketPath: '/ws',
+        tls: const TlsOptions(enabled: false),
+      ),
+      featureSettings: SingboxFeatureSettings(
+        rawConfigPatch: <String, Object?>{
+          'outbounds': <Object?>[
+            <String, Object?>{
+              'tag': 'proxy-main',
+              'type': 'vless',
+              'server': 'edge.example.com',
+              'server_port': 80,
+              'uuid': '11111111-2222-3333-4444-555555555555',
+              'security': 'none',
+              'transport': <String, Object?>{
+                'type': 'httpupgrade',
+                'path': '/ws',
+                'host': 'edge.example.com',
+              },
+              'tls': <String, Object?>{
+                'enabled': true,
+                'server_name': 'edge.example.com',
+              },
+            },
+            <String, Object?>{'type': 'direct', 'tag': 'direct'},
+            <String, Object?>{'type': 'block', 'tag': 'block'},
+            <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
+          ],
+        },
+      ),
+    );
+
+    final Map<String, dynamic> config =
+        jsonDecode(fakePlatform.latestConfig!) as Map<String, dynamic>;
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> outbound =
+        outbounds.firstWhere((dynamic item) {
+              return item is Map<String, dynamic> &&
+                  item['tag'] == 'proxy-main';
+            })
+            as Map<String, dynamic>;
+
     expect(outbound.containsKey('tls'), isFalse);
   });
 

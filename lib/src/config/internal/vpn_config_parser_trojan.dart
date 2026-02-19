@@ -10,8 +10,12 @@ _ParseOutput _parseTrojanConfig(
 
   final Map<String, String> query = parser._normalizeQuery(uri);
   final List<String> warnings = <String>[];
+  final String? rawTransport = VpnConfigParser._firstValue(
+    query,
+    const <String>['type', 'net'],
+  );
   final VpnTransport transport = parser._parseTransport(
-    VpnConfigParser._firstValue(query, const <String>['type', 'net']),
+    rawTransport,
     warnings: warnings,
   );
 
@@ -20,6 +24,9 @@ _ParseOutput _parseTrojanConfig(
     'trojan password',
   );
   final String? wsHost = parser._extractWsHost(query);
+
+  final Map<String, Object?> extra = parser._buildTrojanExtra(query);
+  parser._attachTransportAlias(extra, rawTransport);
 
   final VpnProfile profile = VpnProfile.trojan(
     tag: parser._resolveTag(uri, fallbackTag: fallbackTag, scheme: 'trojan'),
@@ -43,7 +50,7 @@ _ParseOutput _parseTrojanConfig(
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),
-    extra: parser._buildTrojanExtra(query),
+    extra: extra,
   );
 
   return _ParseOutput(profile, warnings: warnings);

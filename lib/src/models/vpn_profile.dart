@@ -57,7 +57,7 @@ extension VpnProtocolHealth on VpnProtocol {
 }
 
 /// Transport options for supported TCP-based protocols.
-enum VpnTransport { tcp, ws, grpc, quic, httpUpgrade }
+enum VpnTransport { tcp, ws, grpc, quic, http, httpUpgrade }
 
 /// Wire-value helpers for [VpnTransport].
 extension VpnTransportWire on VpnTransport {
@@ -72,6 +72,8 @@ extension VpnTransportWire on VpnTransport {
         return 'grpc';
       case VpnTransport.quic:
         return 'quic';
+      case VpnTransport.http:
+        return 'http';
       case VpnTransport.httpUpgrade:
         return 'httpupgrade';
     }
@@ -761,6 +763,23 @@ class VpnProfile {
         };
       case VpnTransport.quic:
         return <String, Object?>{'type': 'quic'};
+      case VpnTransport.http:
+        final String path = _normalizeWsTransportPath(websocketPath);
+        final String? host = _extractHttpUpgradeHost(websocketHeaders);
+        final Map<String, String> headers = Map<String, String>.from(
+          _normalizeWsHeaders(websocketHeaders),
+        );
+        headers.remove('Host');
+        headers.remove('host');
+        headers.remove(':authority');
+        headers.remove('authority');
+        return <String, Object?>{
+          'type': 'http',
+          'path': path,
+          if (host case final String resolvedHost)
+            'host': <String>[resolvedHost],
+          if (headers.isNotEmpty) 'headers': headers,
+        };
       case VpnTransport.httpUpgrade:
         final String path = _normalizeWsTransportPath(websocketPath);
         final String? host = _extractHttpUpgradeHost(websocketHeaders);
@@ -768,6 +787,8 @@ class VpnProfile {
           'type': 'httpupgrade',
           'path': path,
           if (host case final String resolvedHost) 'host': resolvedHost,
+          if (host case final String resolvedHost)
+            'headers': <String, String>{'Host': resolvedHost},
         };
     }
   }

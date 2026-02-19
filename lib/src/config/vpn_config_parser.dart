@@ -30,6 +30,8 @@ class ParsedVpnConfig {
 class VpnConfigParser {
   const VpnConfigParser();
 
+  static const String _transportAliasExtraKey = '_sbmm_transport_alias';
+
   static const Set<String> supportedSchemes = <String>{
     'sbmm',
     'vless',
@@ -536,16 +538,49 @@ class VpnConfigParser {
         return VpnTransport.grpc;
       case 'quic':
         return VpnTransport.quic;
+      case 'xhttp':
+        // sing-box does not support the xray xhttp (splithttp) protocol.
+        // Remap to httpUpgrade, which sing-box supports natively and is
+        // compatible with Hiddify/xray servers that expose both transports
+        // on the same endpoint. This avoids PROTOCOL_ERROR / 400 errors.
+        warnings?.add(
+          'xhttp transport is not supported by sing-box; '
+          'remapped to httpupgrade for compatibility.',
+        );
+        return VpnTransport.httpUpgrade;
+      case 'h2':
+      case 'http2':
       case 'http':
+        return VpnTransport.http;
       case 'httpupgrade':
       case 'http-upgrade':
-      case 'xhttp':
-      case 'h2':
         return VpnTransport.httpUpgrade;
       default:
         warnings?.add('Unsupported transport "$value", fallback to tcp.');
         return VpnTransport.tcp;
     }
+  }
+
+  String? _normalizeTransportAlias(String? value) {
+    final String normalized = value?.trim().toLowerCase() ?? '';
+    if (normalized.isEmpty) {
+      return null;
+    }
+    if (normalized == 'xhttp') {
+      return 'xhttp';
+    }
+    if (normalized == 'httpupgrade' || normalized == 'http-upgrade') {
+      return 'httpupgrade';
+    }
+    return null;
+  }
+
+  void _attachTransportAlias(Map<String, Object?> extra, String? rawTransport) {
+    final String? alias = _normalizeTransportAlias(rawTransport);
+    if (alias == null) {
+      return;
+    }
+    extra[_transportAliasExtraKey] = alias;
   }
 
   TlsOptions _buildTlsOptions(

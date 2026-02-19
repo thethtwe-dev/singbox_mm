@@ -41,6 +41,15 @@ class VpnSubscriptionParser {
     bool tryBase64Decode = true,
     bool deduplicate = true,
     String? sbmmPassphrase,
+
+    /// If non-null, only profiles whose [VpnProfile.transport] is contained
+    /// in this set are included. Profiles using other transports are silently
+    /// skipped (not counted as parse failures).
+    Set<VpnTransport>? allowedTransports,
+
+    /// If non-null, only profiles whose [VpnProfile.protocol] is contained
+    /// in this set are included.
+    Set<VpnProtocol>? allowedProtocols,
   }) {
     final String normalized = rawSubscription.trim();
     if (normalized.isEmpty) {
@@ -62,6 +71,8 @@ class VpnSubscriptionParser {
       payload.payload,
       deduplicate: deduplicate,
       sbmmPassphrase: sbmmPassphrase,
+      allowedTransports: allowedTransports,
+      allowedProtocols: allowedProtocols,
     );
 
     return ParsedVpnSubscription(

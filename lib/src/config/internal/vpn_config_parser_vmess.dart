@@ -18,8 +18,12 @@ _ParseOutput _parseVmessConfig(
 
   final Map<String, String> query = parser._normalizeQuery(uri);
   final List<String> warnings = <String>[];
+  final String? rawTransport = VpnConfigParser._firstValue(
+    query,
+    const <String>['type', 'net'],
+  );
   final VpnTransport transport = parser._parseTransport(
-    VpnConfigParser._firstValue(query, const <String>['type', 'net']),
+    rawTransport,
     warnings: warnings,
   );
 
@@ -28,6 +32,9 @@ _ParseOutput _parseVmessConfig(
     Uri.decodeComponent(uri.userInfo),
     'vmess uuid',
   );
+
+  final Map<String, Object?> extra = parser._buildVmessExtra(query);
+  parser._attachTransportAlias(extra, rawTransport);
 
   final VpnProfile profile = VpnProfile.vmess(
     tag: parser._resolveTag(uri, fallbackTag: fallbackTag, scheme: 'vmess'),
@@ -51,7 +58,7 @@ _ParseOutput _parseVmessConfig(
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),
-    extra: parser._buildVmessExtra(query),
+    extra: extra,
   );
 
   return _ParseOutput(profile, warnings: warnings);
@@ -138,6 +145,29 @@ _ParseOutput? _tryParseVmessJsonConfig(
     if (VpnConfigParser._stringFromMap(vmessMap, const <String>['alpn']) !=
         null)
       'alpn': VpnConfigParser._stringFromMap(vmessMap, const <String>['alpn'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>['mode']) !=
+        null)
+      'mode': VpnConfigParser._stringFromMap(vmessMap, const <String>['mode'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>['dl']) != null)
+      'dl': VpnConfigParser._stringFromMap(vmessMap, const <String>['dl'])!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>[
+          'downloadsettings',
+          'download_settings',
+        ]) !=
+        null)
+      'downloadsettings': VpnConfigParser._stringFromMap(
+        vmessMap,
+        const <String>['downloadsettings', 'download_settings'],
+      )!,
+    if (VpnConfigParser._stringFromMap(vmessMap, const <String>[
+          'xhttpmode',
+          'xhttp_mode',
+        ]) !=
+        null)
+      'xhttpmode': VpnConfigParser._stringFromMap(vmessMap, const <String>[
+        'xhttpmode',
+        'xhttp_mode',
+      ])!,
     if (VpnConfigParser._stringFromMap(vmessMap, const <String>['fp']) != null)
       'fp': VpnConfigParser._stringFromMap(vmessMap, const <String>['fp'])!,
     if (VpnConfigParser._stringFromMap(vmessMap, const <String>[
@@ -175,8 +205,12 @@ _ParseOutput? _tryParseVmessJsonConfig(
   };
 
   final List<String> warnings = <String>[];
+  final String? rawTransport = VpnConfigParser._stringFromMap(
+    vmessMap,
+    const <String>['net', 'type'],
+  );
   final VpnTransport transport = parser._parseTransport(
-    VpnConfigParser._stringFromMap(vmessMap, const <String>['net', 'type']),
+    rawTransport,
     warnings: warnings,
   );
 
@@ -187,6 +221,16 @@ _ParseOutput? _tryParseVmessJsonConfig(
     scheme: 'vmess',
     host: host,
   );
+
+  final Map<String, Object?> extra = parser._buildVmessExtra(
+    query,
+    alterId: VpnConfigParser._intFromMap(vmessMap, const <String>['aid']),
+    cipher: VpnConfigParser._stringFromMap(vmessMap, const <String>[
+      'scy',
+      'cipher',
+    ]),
+  );
+  parser._attachTransportAlias(extra, rawTransport);
 
   final VpnProfile profile = VpnProfile.vmess(
     tag: vmessTag,
@@ -210,14 +254,7 @@ _ParseOutput? _tryParseVmessJsonConfig(
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),
-    extra: parser._buildVmessExtra(
-      query,
-      alterId: VpnConfigParser._intFromMap(vmessMap, const <String>['aid']),
-      cipher: VpnConfigParser._stringFromMap(vmessMap, const <String>[
-        'scy',
-        'cipher',
-      ]),
-    ),
+    extra: extra,
   );
 
   return _ParseOutput(profile, warnings: warnings);

@@ -37,11 +37,17 @@ _ParseOutput _parseShadowsocksConfig(
 
   final Map<String, String> query = parsed.query;
   final List<String> warnings = <String>[];
+  final String? rawTransport = VpnConfigParser._firstValue(
+    query,
+    const <String>['type', 'net'],
+  );
   final VpnTransport transport = parser._parseTransport(
-    VpnConfigParser._firstValue(query, const <String>['type', 'net']),
+    rawTransport,
     warnings: warnings,
   );
   final String? wsHost = parser._extractWsHost(query);
+  final Map<String, Object?> extra = parser._buildShadowsocksExtra(query);
+  parser._attachTransportAlias(extra, rawTransport);
 
   final VpnProfile profile = VpnProfile.shadowsocks(
     tag: parser._buildTag(
@@ -71,7 +77,7 @@ _ParseOutput _parseShadowsocksConfig(
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),
-    extra: parser._buildShadowsocksExtra(query),
+    extra: extra,
   );
 
   return _ParseOutput(profile, warnings: warnings);

@@ -10,8 +10,12 @@ _ParseOutput _parseVlessConfig(
 
   final Map<String, String> query = parser._normalizeQuery(uri);
   final List<String> warnings = <String>[];
+  final String? rawTransport = VpnConfigParser._firstValue(
+    query,
+    const <String>['type', 'net'],
+  );
   final VpnTransport transport = parser._parseTransport(
-    VpnConfigParser._firstValue(query, const <String>['type', 'net']),
+    rawTransport,
     warnings: warnings,
   );
 
@@ -20,6 +24,9 @@ _ParseOutput _parseVlessConfig(
     'vless uuid',
   );
   final String? wsHost = parser._extractWsHost(query);
+
+  final Map<String, Object?> extra = parser._buildVlessExtra(query);
+  parser._attachTransportAlias(extra, rawTransport);
 
   final VpnProfile profile = VpnProfile.vless(
     tag: parser._resolveTag(uri, fallbackTag: fallbackTag, scheme: 'vless'),
@@ -44,7 +51,7 @@ _ParseOutput _parseVlessConfig(
           ? const <String>['http/1.1']
           : const <String>['h2', 'http/1.1'],
     ),
-    extra: parser._buildVlessExtra(query),
+    extra: extra,
   );
 
   return _ParseOutput(profile, warnings: warnings);

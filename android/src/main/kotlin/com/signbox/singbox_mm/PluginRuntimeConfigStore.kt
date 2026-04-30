@@ -1,7 +1,10 @@
 package com.signbox.singbox_mm
 
 import android.content.Context
+import android.system.Os
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
 
 internal class PluginRuntimeConfigStore(
     private val context: Context,
@@ -24,7 +27,6 @@ internal class PluginRuntimeConfigStore(
 
     @Synchronized
     fun initialize(arguments: Map<String, Any?>) {
-        val requestedWorkingDir = arguments["workingDirectory"] as? String
         val requestedBinaryPath = arguments["binaryPath"] as? String
         val logLevel = arguments["logLevel"] as? String ?: "info"
         val verbose = arguments["enableVerboseLogs"] as? Boolean ?: false
@@ -33,11 +35,7 @@ internal class PluginRuntimeConfigStore(
                 ?: defaultStatsEmitIntervalMs)
                 .coerceIn(250L, 10_000L)
 
-        val workingDirectory = if (!requestedWorkingDir.isNullOrBlank()) {
-            File(requestedWorkingDir)
-        } else {
-            File(context.filesDir, "singbox")
-        }
+        val workingDirectory = File(context.filesDir, "singbox")
 
         if (!workingDirectory.exists() && !workingDirectory.mkdirs()) {
             throw IllegalStateException("Unable to create working directory")
@@ -81,7 +79,7 @@ internal class PluginRuntimeConfigStore(
         val runtime = ensureRuntimeConfig()
         val file = configFile ?: File(runtime.workingDirectory, defaultConfigFileName)
         configFile = file
-        file.writeText(configContent)
+        writeConfigAtomically(file, configContent)
     }
 
     @Synchronized
@@ -95,5 +93,35 @@ internal class PluginRuntimeConfigStore(
     @Synchronized
     fun currentStatsEmitIntervalMs(): Long {
         return runtimeConfig?.statsEmitIntervalMs ?: defaultStatsEmitIntervalMs
+    }
+
+    private fun writeConfigAtomically(file: File, configContent: String) {
+        val parent = file.parentFile ?: throw IllegalStateException("Config file has no parent")
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw IllegalStateException("Unable to create config directory")
+        }
+
+        val tmp = File(parent, "${file.name}.tmp")
+        try {
+            FileOutputStream(tmp, false).use { output ->
+                output.write(configContent.toByteArray(StandardCharsets.UTF_8))
+                output.fd.sync()
+            }
+            applyOwnerOnlyPermissions(tmp)
+            Os.rename(tmp.absolutePath, file.absolutePath)
+            applyOwnerOnlyPermissions(file)
+        } finally {
+            if (tmp.exists()) {
+                tmp.delete()
+            }
+        }
+    }
+
+    private fun applyOwnerOnlyPermissions(file: File) {
+        file.setReadable(false, false)
+        file.setWritable(false, false)
+        file.setExecutable(false, false)
+        file.setReadable(true, true)
+        file.setWritable(true, true)
     }
 }

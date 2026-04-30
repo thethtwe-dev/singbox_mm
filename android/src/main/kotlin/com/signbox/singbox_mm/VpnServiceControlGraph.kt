@@ -70,9 +70,6 @@ internal class VpnServiceControlGraph(
             sendCoreNotification = { notification ->
                 runtimeOpsBridge.sendNotification(notification)
             },
-            writeCoreLog = { message ->
-                runtimeOpsBridge.writeLog(message)
-            },
         )
     }
 
@@ -81,8 +78,11 @@ internal class VpnServiceControlGraph(
             serviceReload = {
                 runtimeOpsBridge.serviceReload()
             },
-            postServiceClose = {
-                runtimeOpsBridge.postServiceClose()
+            serviceStop = {
+                runtimeOpsBridge.serviceStop()
+            },
+            writeLog = { message ->
+                runtimeOpsBridge.writeLog(message)
             },
         )
     }

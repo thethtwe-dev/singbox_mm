@@ -1,10 +1,8 @@
 package com.signbox.singbox_mm
 
 import android.util.Log
-import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.Notification as CoreNotification
-import io.nekohasekai.libbox.PlatformInterface
 import java.util.concurrent.ExecutorService
 
 internal object VpnServiceActionExecutor {
@@ -69,24 +67,19 @@ internal object VpnServiceActionExecutor {
 
     fun reloadService(
         commandServer: CommandServer?,
-        oldService: BoxService?,
         configPath: String?,
-        host: PlatformInterface,
-        onRuntimeUpdated: (BoxService) -> Unit,
+        onSuccess: () -> Unit,
         onFailure: (String) -> Unit,
     ) {
         val server = commandServer ?: return
-        val service = oldService ?: return
         val path = configPath ?: return
         runCatching {
             VpnServiceReloader.reload(
                 commandServer = server,
-                oldService = service,
-                host = host,
                 configPath = path,
             )
-        }.onSuccess { nextService ->
-            onRuntimeUpdated(nextService)
+        }.onSuccess {
+            onSuccess()
         }.onFailure {
             onFailure(it.message ?: "unknown error")
         }

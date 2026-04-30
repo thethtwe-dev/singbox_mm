@@ -5,6 +5,8 @@ build/
 *.iml
 
 logs*.txt
+*.log
+cfgs.txt
 libbox_backup/
 
 test/
@@ -16,6 +18,7 @@ example/build/
 example/integration_test/
 example/test_driver/
 example/assets/singbox/
+android/gradle/
 
 # Keep pub.dev package under extracted-size limit by excluding emulator ABIs.
 android/src/main/jniLibs/x86/

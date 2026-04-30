@@ -35,6 +35,10 @@ void main() {
               return true;
             case 'requestNotificationPermission':
               return true;
+            case 'validateConfig':
+              final Map<Object?, Object?> args =
+                  methodCall.arguments as Map<Object?, Object?>;
+              return args['config'] as String;
             case 'syncRuntimeState':
               return null;
             default:
@@ -83,5 +87,11 @@ void main() {
 
   test('syncRuntimeState invokes platform method', () async {
     await platform.syncRuntimeState();
+  });
+
+  test('validateConfig returns normalized payload', () async {
+    const String raw = '{"log":{"level":"info"}}';
+    final String normalized = await platform.validateConfig(raw);
+    expect(normalized, raw);
   });
 }

@@ -5,7 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
-import io.nekohasekai.libbox.BoxService
+import io.nekohasekai.libbox.CommandServer
 
 internal object VpnNotificationRuntimeCoordinator {
     fun ensureChannel(
@@ -47,9 +47,9 @@ internal object VpnNotificationRuntimeCoordinator {
     }
 
     fun shouldKeepLiveTicker(
-        boxService: BoxService?,
+        commandServer: CommandServer?,
         connectedSinceMillis: Long?,
     ): Boolean {
-        return boxService != null && connectedSinceMillis != null
+        return commandServer != null && connectedSinceMillis != null
     }
 }

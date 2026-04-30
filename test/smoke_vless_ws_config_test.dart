@@ -54,6 +54,11 @@ class _CapturePlatform
   }
 
   @override
+  Future<String> validateConfig(String configJson) async {
+    return configJson;
+  }
+
+  @override
   Future<void> startVpn() async {}
 
   @override
@@ -251,14 +256,18 @@ void main() {
     );
 
     // -----------------------------------------------------------------------
-    // 6. Route — DNS port 53 must be intercepted.
+    // 6. Route — DNS port 53 must be hijacked into the DNS module.
     // -----------------------------------------------------------------------
     final Map<String, dynamic> route =
         (config['route'] as Map<dynamic, dynamic>).cast<String, dynamic>();
     final List<dynamic> rules = route['rules'] as List<dynamic>;
     final bool hasDnsRule = rules.any(
-      (dynamic r) => r is Map && r['port'] == 53 && r['outbound'] == 'dns-out',
+      (dynamic r) => r is Map && r['port'] == 53 && r['action'] == 'hijack-dns',
     );
-    expect(hasDnsRule, isTrue, reason: 'DNS port 53 must route to dns-out');
+    expect(
+      hasDnsRule,
+      isTrue,
+      reason: 'DNS port 53 must be handled by hijack-dns',
+    );
   });
 }

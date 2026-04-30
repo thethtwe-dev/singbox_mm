@@ -10,6 +10,7 @@ internal object PluginMethods {
     const val INITIALIZE = "initialize"
     const val REQUEST_VPN_PERMISSION = "requestVpnPermission"
     const val REQUEST_NOTIFICATION_PERMISSION = "requestNotificationPermission"
+    const val VALIDATE_CONFIG = "validateConfig"
     const val SET_CONFIG = "setConfig"
     const val START_VPN = "startVpn"
     const val STOP_VPN = "stopVpn"

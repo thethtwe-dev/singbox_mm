@@ -258,6 +258,235 @@ class VpnConfigParser {
     return output;
   }
 
+  /// Applies `extra.downloadSettings` overrides onto normalized query params.
+  ///
+  /// Exposed as a stable non-private wrapper so internal parser refactors
+  /// cannot break member resolution during incremental builds.
+  Map<String, String> applyDownloadSettingsOverrides(
+    Map<String, String> query,
+  ) => _applyDownloadSettingsOverrides(query);
+
+  Map<String, String> _applyDownloadSettingsOverrides(
+    Map<String, String> query,
+  ) {
+    if (query.isEmpty) {
+      return query;
+    }
+
+    final Map<String, Object?> extra = _extractExtraMap(query);
+    final Map<String, Object?> downloadSettings = _extractDownloadSettingsMap(
+      query,
+      extra: extra,
+    );
+    if (downloadSettings.isEmpty) {
+      return query;
+    }
+
+    final Map<String, String> merged = Map<String, String>.from(query);
+
+    void setIfPresent(String key, String? value) {
+      if (value == null) {
+        return;
+      }
+      final String normalized = value.trim();
+      if (normalized.isEmpty) {
+        return;
+      }
+      merged[key.toLowerCase()] = normalized;
+    }
+
+    final String? networkHint = _firstNonEmpty(<String?>[
+      _stringFromDynamic(downloadSettings['network']),
+      _stringFromDynamic(downloadSettings['transport']),
+    ]);
+    if (networkHint != null) {
+      setIfPresent('type', networkHint);
+      setIfPresent('net', networkHint);
+    }
+
+    setIfPresent('security', _stringFromDynamic(downloadSettings['security']));
+    setIfPresent('sni', _stringFromDynamic(downloadSettings['serverName']));
+    setIfPresent('sni', _stringFromDynamic(downloadSettings['server_name']));
+    setIfPresent(
+      '_sbmm_download_address',
+      _firstNonEmpty(<String?>[
+        _stringFromDynamic(downloadSettings['address']),
+        _stringFromDynamic(downloadSettings['server']),
+        _stringFromDynamic(downloadSettings['host']),
+      ]),
+    );
+    setIfPresent(
+      '_sbmm_download_port',
+      _normalizePortValue(downloadSettings['port']),
+    );
+
+    final Map<String, Object?> xhttpSettings = _asObjectMap(
+      downloadSettings['xhttpSettings'] ?? downloadSettings['xhttp_settings'],
+    );
+    if (xhttpSettings.isNotEmpty) {
+      setIfPresent('path', _stringFromDynamic(xhttpSettings['path']));
+      setIfPresent(
+        'host',
+        _firstNonEmpty(<String?>[
+          _stringFromDynamic(xhttpSettings['host']),
+          _stringFromDynamic(xhttpSettings['authority']),
+          _stringFromDynamic(xhttpSettings[':authority']),
+        ]),
+      );
+
+      final String? mode = _stringFromDynamic(xhttpSettings['mode']);
+      setIfPresent('mode', mode);
+      setIfPresent('xhttpmode', mode);
+      setIfPresent('xhttp_mode', mode);
+    }
+
+    final Map<String, Object?> grpcSettings = _asObjectMap(
+      downloadSettings['grpcSettings'] ?? downloadSettings['grpc_settings'],
+    );
+    if (grpcSettings.isNotEmpty) {
+      setIfPresent(
+        'servicename',
+        _firstNonEmpty(<String?>[
+          _stringFromDynamic(grpcSettings['serviceName']),
+          _stringFromDynamic(grpcSettings['service_name']),
+          _stringFromDynamic(grpcSettings['service']),
+        ]),
+      );
+      setIfPresent(
+        'authority',
+        _firstNonEmpty(<String?>[
+          _stringFromDynamic(grpcSettings['authority']),
+          _stringFromDynamic(grpcSettings['host']),
+          _stringFromDynamic(grpcSettings[':authority']),
+        ]),
+      );
+      setIfPresent(
+        'mode',
+        _firstNonEmpty(<String?>[
+          _stringFromDynamic(grpcSettings['mode']),
+          _stringFromDynamic(grpcSettings['multiMode']),
+          _stringFromDynamic(grpcSettings['multi_mode']),
+        ]),
+      );
+    }
+
+    final Map<String, Object?> tlsSettings = _asObjectMap(
+      downloadSettings['tlsSettings'] ?? downloadSettings['tls_settings'],
+    );
+    if (tlsSettings.isNotEmpty) {
+      setIfPresent(
+        'sni',
+        _firstNonEmpty(<String?>[
+          _stringFromDynamic(tlsSettings['serverName']),
+          _stringFromDynamic(tlsSettings['server_name']),
+        ]),
+      );
+      setIfPresent(
+        'fp',
+        _firstNonEmpty(<String?>[
+          _stringFromDynamic(tlsSettings['fingerprint']),
+          _stringFromDynamic(tlsSettings['utlsFingerprint']),
+          _stringFromDynamic(tlsSettings['utls_fingerprint']),
+        ]),
+      );
+
+      final String? allowInsecure = _boolToQueryValue(
+        tlsSettings['allowInsecure'] ??
+            tlsSettings['allow_insecure'] ??
+            tlsSettings['insecure'],
+      );
+      if (allowInsecure != null) {
+        setIfPresent('allowinsecure', allowInsecure);
+        setIfPresent('insecure', allowInsecure);
+      }
+
+      final String? alpn = _coerceAlpnCsv(tlsSettings['alpn']);
+      if (alpn != null) {
+        setIfPresent('alpn', alpn);
+      }
+    }
+
+    return merged;
+  }
+
+  String? _normalizePortValue(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is num) {
+      final int port = value.toInt();
+      if (port <= 0 || port > 65535) {
+        return null;
+      }
+      return '$port';
+    }
+    if (value is String) {
+      final int? port = int.tryParse(value.trim());
+      if (port == null || port <= 0 || port > 65535) {
+        return null;
+      }
+      return '$port';
+    }
+    return null;
+  }
+
+  _ResolvedEndpoint _resolveEndpoint(
+    Uri uri,
+    Map<String, String> query, {
+    required String scheme,
+  }) {
+    String host = uri.host.trim();
+    int port = uri.port;
+
+    final String? overrideHost = _firstValue(query, const <String>[
+      '_sbmm_download_address',
+    ]);
+    if (overrideHost != null && overrideHost.trim().isNotEmpty) {
+      host = overrideHost.trim();
+    }
+
+    final int? overridePort = _parseInt(
+      _firstValue(query, const <String>['_sbmm_download_port']),
+    );
+    if (overridePort != null && overridePort > 0 && overridePort <= 65535) {
+      port = overridePort;
+    }
+
+    if (host.isEmpty || port <= 0) {
+      throw FormatException('$scheme link is missing host/port.');
+    }
+    return _ResolvedEndpoint(host: host, port: port);
+  }
+
+  _ResolvedEndpoint _resolveEndpointFromBase(
+    String host,
+    int port,
+    Map<String, String> query, {
+    required String scheme,
+  }) {
+    String resolvedHost = host.trim();
+    int resolvedPort = port;
+
+    final String? overrideHost = _firstValue(query, const <String>[
+      '_sbmm_download_address',
+    ]);
+    if (overrideHost != null && overrideHost.trim().isNotEmpty) {
+      resolvedHost = overrideHost.trim();
+    }
+
+    final int? overridePort = _parseInt(
+      _firstValue(query, const <String>['_sbmm_download_port']),
+    );
+    if (overridePort != null && overridePort > 0 && overridePort <= 65535) {
+      resolvedPort = overridePort;
+    }
+
+    if (resolvedHost.isEmpty || resolvedPort <= 0) {
+      throw FormatException('$scheme link is missing host/port.');
+    }
+    return _ResolvedEndpoint(host: resolvedHost, port: resolvedPort);
+  }
+
   String? _extractWsPath(Map<String, String> query) {
     final String? raw = _firstValue(query, const <String>[
       'path',
@@ -390,6 +619,80 @@ class VpnConfigParser {
     return null;
   }
 
+  Map<String, String> _extractTransportHeaders(Map<String, String> query) {
+    final Map<String, String> headers = <String, String>{};
+
+    void mergeHeaders(Map<String, String> source) {
+      source.forEach((String rawKey, String rawValue) {
+        final String key = _normalizeHeaderName(rawKey);
+        final String value = _trimHeaderToken(rawValue);
+        if (key.isEmpty || value.isEmpty) {
+          return;
+        }
+        headers[key] = value;
+      });
+    }
+
+    final String? inlineHeadersRaw = _firstValue(query, const <String>[
+      'headers',
+      'ws_headers',
+      'ws-headers',
+      'http_headers',
+      'http-headers',
+    ]);
+    if (inlineHeadersRaw != null) {
+      mergeHeaders(_parseHeadersFromRaw(inlineHeadersRaw));
+    }
+
+    final Map<String, Object?> extra = _extractExtraMap(query);
+    mergeHeaders(_extractHeaderMap(extra['headers']));
+
+    final Map<String, Object?> downloadSettings = _extractDownloadSettingsMap(
+      query,
+      extra: extra,
+    );
+    mergeHeaders(_extractHeaderMap(downloadSettings['headers']));
+
+    final Map<String, Object?> xhttpSettings = _asObjectMap(
+      downloadSettings['xhttpSettings'] ?? downloadSettings['xhttp_settings'],
+    );
+    mergeHeaders(_extractHeaderMap(xhttpSettings['headers']));
+
+    final Map<String, Object?> xhttpExtra = _asObjectMap(
+      xhttpSettings['extra'],
+    );
+    mergeHeaders(_extractHeaderMap(xhttpExtra['headers']));
+
+    final String? xhttpHost = _firstNonEmpty(<String?>[
+      _stringFromDynamic(xhttpSettings['host']),
+      _stringFromDynamic(xhttpSettings['authority']),
+      _stringFromDynamic(xhttpSettings[':authority']),
+    ]);
+    if (xhttpHost != null) {
+      headers['Host'] = xhttpHost;
+    }
+
+    final String? resolvedHost = _firstNonEmpty(<String?>[
+      _firstValue(query, const <String>[
+        'host',
+        'ws-host',
+        'ws_host',
+        'authority',
+        ':authority',
+      ]),
+      headers['Host'],
+      headers['host'],
+      headers[':authority'],
+      headers['authority'],
+      _firstValue(query, const <String>['sni', 'servername', 'server_name']),
+    ]);
+    if (resolvedHost != null) {
+      headers['Host'] = resolvedHost;
+    }
+
+    return headers;
+  }
+
   String? _extractGrpcServiceName(Map<String, String> query) {
     final String? direct = _firstValue(query, const <String>[
       'servicename',
@@ -401,14 +704,79 @@ class VpnConfigParser {
       'grpcservice',
     ]);
     if (direct != null && direct.trim().isNotEmpty) {
-      return direct.trim();
+      return _normalizeGrpcServiceName(direct);
     }
 
     final String? fromPath = _extractWsPath(query);
     if (fromPath == null || fromPath.isEmpty || fromPath == '/') {
       return null;
     }
-    return fromPath.startsWith('/') ? fromPath.substring(1) : fromPath;
+    return _normalizeGrpcServiceName(fromPath);
+  }
+
+  String? _extractGrpcAuthority(Map<String, String> query) {
+    final String? direct = _firstValue(query, const <String>[
+      'authority',
+      ':authority',
+      'grpc_authority',
+      'grpcauthority',
+      'grpc-authority',
+      'host',
+    ]);
+    if (direct != null && direct.trim().isNotEmpty) {
+      return direct.trim();
+    }
+
+    final Map<String, String> headers = _extractTransportHeaders(query);
+    return _firstNonEmpty(<String?>[
+      headers[':authority'],
+      headers['authority'],
+      headers['Host'],
+      headers['host'],
+    ]);
+  }
+
+  String? _extractGrpcMode(Map<String, String> query) {
+    final String? mode = _firstValue(query, const <String>[
+      'mode',
+      'grpc_mode',
+      'grpcmode',
+      'grpc-mode',
+    ]);
+    if (mode == null) {
+      return null;
+    }
+    final String normalized = mode.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    if (normalized != 'gun' && normalized != 'multi') {
+      return null;
+    }
+    return normalized;
+  }
+
+  String _normalizeGrpcServiceName(String raw) {
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return 'grpc';
+    }
+    final String withoutPrefix = trimmed.replaceFirst(RegExp(r'^/+'), '');
+    return withoutPrefix.isEmpty ? 'grpc' : withoutPrefix;
+  }
+
+  List<String> _defaultAlpnForTransport(VpnTransport transport) {
+    switch (transport) {
+      case VpnTransport.grpc:
+        return const <String>['h2'];
+      case VpnTransport.ws:
+      case VpnTransport.httpUpgrade:
+        return const <String>['http/1.1'];
+      case VpnTransport.tcp:
+      case VpnTransport.quic:
+      case VpnTransport.http:
+        return const <String>['h2', 'http/1.1'];
+    }
   }
 
   int _extractWsMaxEarlyData(Map<String, String> query) {
@@ -491,7 +859,7 @@ class VpnConfigParser {
     return null;
   }
 
-  String _trimHeaderToken(String value) {
+  static String _trimHeaderToken(String value) {
     String normalized = value.trim();
     while (normalized.length >= 2 &&
         ((normalized.startsWith('"') && normalized.endsWith('"')) ||
@@ -539,15 +907,12 @@ class VpnConfigParser {
       case 'quic':
         return VpnTransport.quic;
       case 'xhttp':
-        // sing-box does not support the xray xhttp (splithttp) protocol.
-        // Remap to httpUpgrade, which sing-box supports natively and is
-        // compatible with Hiddify/xray servers that expose both transports
-        // on the same endpoint. This avoids PROTOCOL_ERROR / 400 errors.
+        // xray-style xhttp links are represented as sing-box `http`
+        // transport and normalized further by SingboxConfigBuilder.
         warnings?.add(
-          'xhttp transport is not supported by sing-box; '
-          'remapped to httpupgrade for compatibility.',
+          'xhttp transport detected; normalized to sing-box http transport.',
         );
-        return VpnTransport.httpUpgrade;
+        return VpnTransport.http;
       case 'h2':
       case 'http2':
       case 'http':
@@ -555,6 +920,11 @@ class VpnConfigParser {
       case 'httpupgrade':
       case 'http-upgrade':
         return VpnTransport.httpUpgrade;
+      case 'splithttp':
+        warnings?.add(
+          'splithttp transport detected; promoted to sing-box http (xhttp) transport.',
+        );
+        return VpnTransport.http;
       default:
         warnings?.add('Unsupported transport "$value", fallback to tcp.');
         return VpnTransport.tcp;
@@ -575,12 +945,82 @@ class VpnConfigParser {
     return null;
   }
 
-  void _attachTransportAlias(Map<String, Object?> extra, String? rawTransport) {
-    final String? alias = _normalizeTransportAlias(rawTransport);
+  void _attachTransportAlias(
+    Map<String, Object?> extra,
+    String? rawTransport, {
+    String? forceAlias,
+  }) {
+    final String? alias =
+        _normalizeTransportAlias(forceAlias) ??
+        _normalizeTransportAlias(rawTransport);
     if (alias == null) {
       return;
     }
     extra[_transportAliasExtraKey] = alias;
+  }
+
+  bool _shouldPromoteHttpUpgradeToXhttp({
+    required String? rawTransport,
+    required Map<String, String> query,
+  }) {
+    final String normalizedTransport = rawTransport?.trim().toLowerCase() ?? '';
+    if (normalizedTransport == 'xhttp') {
+      return false;
+    }
+    if (normalizedTransport != 'httpupgrade' &&
+        normalizedTransport != 'http-upgrade') {
+      return false;
+    }
+
+    final String? coreHint = _firstValue(query, const <String>['core']);
+    if (coreHint != null && coreHint.trim().toLowerCase() == 'xray') {
+      return true;
+    }
+
+    if (_containsH2OrH3(_firstValue(query, const <String>['alpn']))) {
+      return true;
+    }
+
+    final Map<String, Object?> extra = _extractExtraMap(query);
+    final Map<String, Object?> downloadSettings = _extractDownloadSettingsMap(
+      query,
+      extra: extra,
+    );
+    if (_hasXhttpHints(extra) || _hasXhttpHints(downloadSettings)) {
+      return true;
+    }
+
+    final String? xhttpModeHint = _firstValue(query, const <String>[
+      'xhttpmode',
+      'xhttp_mode',
+    ]);
+    if (xhttpModeHint != null && xhttpModeHint.trim().isNotEmpty) {
+      return true;
+    }
+
+    final String? modeHint = _firstValue(query, const <String>['mode']);
+    if (modeHint != null) {
+      final String normalizedMode = modeHint.trim().toLowerCase();
+      if (normalizedMode == 'xhttp' ||
+          normalizedMode == 'splithttp' ||
+          normalizedMode == 'auto' ||
+          normalizedMode == 'stream-up' ||
+          normalizedMode == 'stream-one' ||
+          normalizedMode == 'packet-up' ||
+          normalizedMode == 'packet' ||
+          normalizedMode == 'packet-conn' ||
+          normalizedMode == 'packet-stat') {
+        return true;
+      }
+    }
+
+    if (query.containsKey('packetaddr') ||
+        query.containsKey('packet-addr') ||
+        query.containsKey('packet_addr')) {
+      return true;
+    }
+
+    return false;
   }
 
   TlsOptions _buildTlsOptions(
@@ -671,6 +1111,14 @@ class VpnConfigParser {
     if (packetEncoding != null && packetEncoding.isNotEmpty) {
       extra['packet_encoding'] = packetEncoding;
     }
+    final String? grpcAuthority = _extractGrpcAuthority(query);
+    if (grpcAuthority != null && grpcAuthority.isNotEmpty) {
+      extra['_sbmm_grpc_authority'] = grpcAuthority;
+    }
+    final String? grpcMode = _extractGrpcMode(query);
+    if (grpcMode != null) {
+      extra['_sbmm_grpc_mode'] = grpcMode;
+    }
 
     return extra;
   }
@@ -683,6 +1131,14 @@ class VpnConfigParser {
     ]);
     if (packetEncoding != null && packetEncoding.isNotEmpty) {
       extra['packet_encoding'] = packetEncoding;
+    }
+    final String? grpcAuthority = _extractGrpcAuthority(query);
+    if (grpcAuthority != null && grpcAuthority.isNotEmpty) {
+      extra['_sbmm_grpc_authority'] = grpcAuthority;
+    }
+    final String? grpcMode = _extractGrpcMode(query);
+    if (grpcMode != null) {
+      extra['_sbmm_grpc_mode'] = grpcMode;
     }
     return extra;
   }
@@ -712,6 +1168,15 @@ class VpnConfigParser {
       extra['security'] = security;
     }
 
+    final String? grpcAuthority = _extractGrpcAuthority(query);
+    if (grpcAuthority != null && grpcAuthority.isNotEmpty) {
+      extra['_sbmm_grpc_authority'] = grpcAuthority;
+    }
+    final String? grpcMode = _extractGrpcMode(query);
+    if (grpcMode != null) {
+      extra['_sbmm_grpc_mode'] = grpcMode;
+    }
+
     return extra;
   }
 
@@ -720,6 +1185,14 @@ class VpnConfigParser {
     final String? plugin = _firstValue(query, const <String>['plugin']);
     if (plugin != null && plugin.isNotEmpty) {
       extra['plugin'] = plugin;
+    }
+    final String? grpcAuthority = _extractGrpcAuthority(query);
+    if (grpcAuthority != null && grpcAuthority.isNotEmpty) {
+      extra['_sbmm_grpc_authority'] = grpcAuthority;
+    }
+    final String? grpcMode = _extractGrpcMode(query);
+    if (grpcMode != null) {
+      extra['_sbmm_grpc_mode'] = grpcMode;
     }
     return extra;
   }
@@ -760,6 +1233,203 @@ class VpnConfigParser {
       }
     }
     return null;
+  }
+
+  static String _normalizeHeaderName(String rawKey) {
+    final String key = rawKey.trim();
+    final String lowered = key.toLowerCase();
+    if (lowered == 'host' ||
+        lowered == ':authority' ||
+        lowered == 'authority') {
+      return 'Host';
+    }
+    if (lowered == 'user-agent') {
+      return 'User-Agent';
+    }
+    return key;
+  }
+
+  static String? _stringFromDynamic(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    final String normalized = value.toString().trim();
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  static Map<String, Object?> _asObjectMap(Object? decoded) {
+    if (decoded is! Map<Object?, Object?>) {
+      return const <String, Object?>{};
+    }
+    final Map<String, Object?> result = <String, Object?>{};
+    decoded.forEach((Object? key, Object? value) {
+      if (key is String) {
+        result[key] = value;
+      }
+    });
+    return result;
+  }
+
+  static Map<String, String> _coerceStringMap(Object? decoded) {
+    if (decoded is! Map<Object?, Object?>) {
+      return const <String, String>{};
+    }
+    final Map<String, String> output = <String, String>{};
+    decoded.forEach((Object? key, Object? value) {
+      final String keyText = _stringFromDynamic(key) ?? '';
+      final String valueText = _stringFromDynamic(value) ?? '';
+      if (keyText.isEmpty || valueText.isEmpty) {
+        return;
+      }
+      output[_normalizeHeaderName(keyText)] = _trimHeaderToken(valueText);
+    });
+    return output;
+  }
+
+  Map<String, String> _extractHeaderMap(Object? value) {
+    if (value == null) {
+      return const <String, String>{};
+    }
+    if (value is String) {
+      return _parseHeadersFromRaw(value);
+    }
+    return _coerceStringMap(value);
+  }
+
+  Map<String, String> _parseHeadersFromRaw(String raw) {
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return const <String, String>{};
+    }
+
+    final Map<String, String> fromJson = _coerceStringMap(
+      _tryJsonDecode(trimmed),
+    );
+    if (fromJson.isNotEmpty) {
+      return fromJson;
+    }
+    final String relaxed = trimmed.replaceAll("'", '"');
+    if (relaxed != trimmed) {
+      final Map<String, String> relaxedJson = _coerceStringMap(
+        _tryJsonDecode(relaxed),
+      );
+      if (relaxedJson.isNotEmpty) {
+        return relaxedJson;
+      }
+    }
+
+    final String pairSource = trimmed.replaceAll(
+      RegExp(r'^[{\s]+|[}\s]+$'),
+      '',
+    );
+    final Map<String, String> pairs = <String, String>{};
+    for (final String segment in pairSource.split(RegExp(r'[;,]'))) {
+      final String line = segment.trim();
+      if (line.isEmpty) {
+        continue;
+      }
+      final int colon = line.indexOf(':');
+      final int equals = line.indexOf('=');
+      int split = -1;
+      if (colon >= 0 && equals >= 0) {
+        split = colon < equals ? colon : equals;
+      } else if (colon >= 0) {
+        split = colon;
+      } else if (equals >= 0) {
+        split = equals;
+      }
+      if (split <= 0 || split == line.length - 1) {
+        continue;
+      }
+      final String key = _normalizeHeaderName(
+        _trimHeaderToken(line.substring(0, split)),
+      );
+      final String value = _trimHeaderToken(line.substring(split + 1));
+      if (key.isEmpty || value.isEmpty) {
+        continue;
+      }
+      pairs[key] = value;
+    }
+    return pairs;
+  }
+
+  Map<String, Object?> _extractExtraMap(Map<String, String> query) {
+    final String? raw = _firstValue(query, const <String>['extra']);
+    if (raw == null || raw.trim().isEmpty) {
+      return const <String, Object?>{};
+    }
+    final dynamic decoded =
+        _tryJsonDecode(raw) ?? _tryJsonDecode(raw.replaceAll("'", '"'));
+    return _asObjectMap(decoded);
+  }
+
+  Map<String, Object?> _extractDownloadSettingsMap(
+    Map<String, String> query, {
+    Map<String, Object?>? extra,
+  }) {
+    final Map<String, Object?> fromExtra = _asObjectMap(
+      (extra ?? const <String, Object?>{})['downloadSettings'] ??
+          (extra ?? const <String, Object?>{})['download_settings'],
+    );
+    if (fromExtra.isNotEmpty) {
+      return fromExtra;
+    }
+
+    final String? raw = _firstValue(query, const <String>[
+      'downloadsettings',
+      'download_settings',
+    ]);
+    if (raw == null || raw.trim().isEmpty) {
+      return const <String, Object?>{};
+    }
+    final dynamic decoded =
+        _tryJsonDecode(raw) ?? _tryJsonDecode(raw.replaceAll("'", '"'));
+    return _asObjectMap(decoded);
+  }
+
+  static bool _containsH2OrH3(String? rawAlpn) {
+    for (final String value in _splitCsv(rawAlpn)) {
+      final String normalized = value.trim().toLowerCase();
+      if (normalized == 'h2' ||
+          normalized == 'http2' ||
+          normalized == 'http/2' ||
+          normalized == 'h3' ||
+          normalized.startsWith('h3-')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _hasXhttpHints(Map<String, Object?> source) {
+    if (source.isEmpty) {
+      return false;
+    }
+
+    final String? network = _firstNonEmpty(<String?>[
+      _stringFromDynamic(source['network']),
+      _stringFromDynamic(source['transport']),
+    ]);
+    if (network != null) {
+      final String normalized = network.toLowerCase();
+      if (normalized == 'xhttp' || normalized == 'splithttp') {
+        return true;
+      }
+    }
+
+    if (source.containsKey('xhttpSettings') ||
+        source.containsKey('xhttp_settings')) {
+      return true;
+    }
+
+    final Map<String, Object?> nested = _asObjectMap(
+      source['downloadSettings'],
+    );
+    if (nested.isNotEmpty && _hasXhttpHints(nested)) {
+      return true;
+    }
+
+    return false;
   }
 
   static String? _firstNonEmpty(Iterable<String?> values) {
@@ -803,6 +1473,56 @@ class VpnConfigParser {
       default:
         return fallback;
     }
+  }
+
+  String? _boolToQueryValue(Object? value) {
+    if (value is bool) {
+      return value ? '1' : '0';
+    }
+    if (value is num) {
+      return value != 0 ? '1' : '0';
+    }
+    if (value is String) {
+      final bool? parsed = _parseBool(value, fallback: null);
+      if (parsed != null) {
+        return parsed ? '1' : '0';
+      }
+    }
+    return null;
+  }
+
+  String? _coerceAlpnCsv(Object? value) {
+    if (value == null) {
+      return null;
+    }
+
+    final List<String> tokens = <String>[];
+
+    void addToken(String raw) {
+      for (final String item in _splitCsv(raw)) {
+        final String normalized = item.trim();
+        if (normalized.isEmpty || tokens.contains(normalized)) {
+          continue;
+        }
+        tokens.add(normalized);
+      }
+    }
+
+    if (value is String) {
+      addToken(value);
+    } else if (value is List<Object?>) {
+      for (final Object? item in value) {
+        if (item == null) {
+          continue;
+        }
+        addToken(item.toString());
+      }
+    }
+
+    if (tokens.isEmpty) {
+      return null;
+    }
+    return tokens.join(',');
   }
 
   static List<String> _splitCsv(String? value) {
@@ -880,6 +1600,21 @@ class VpnConfigParser {
     final String? value = _stringFromMap(map, keys);
     return _parseInt(value);
   }
+
+  static void _collectUnknownFields(
+    Map<String, String> query, {
+    required Set<String> knownKeys,
+    required List<String> warnings,
+  }) {
+    query.forEach((String key, String value) {
+      if (key.startsWith('_sbmm_')) {
+        return;
+      }
+      if (!knownKeys.contains(key.toLowerCase())) {
+        warnings.add('Unknown parameter found: "$key"');
+      }
+    });
+  }
 }
 
 class _ParseOutput {
@@ -887,6 +1622,13 @@ class _ParseOutput {
 
   final VpnProfile profile;
   final List<String> warnings;
+}
+
+class _ResolvedEndpoint {
+  const _ResolvedEndpoint({required this.host, required this.port});
+
+  final String host;
+  final int port;
 }
 
 class _SsCredentials {

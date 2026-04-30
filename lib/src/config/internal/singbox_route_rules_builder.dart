@@ -1,5 +1,6 @@
 import '../../models/bypass_policy.dart';
 import '../../models/singbox_feature_settings.dart';
+import '../../models/singbox_rule_set.dart';
 import '../../models/vpn_profile.dart';
 
 class SingboxRouteRulesBuilder {
@@ -13,38 +14,35 @@ class SingboxRouteRulesBuilder {
   }) {
     final List<Object?> rules = <Object?>[];
 
+    if (settings.route.resolveDestination) {
+      rules.add(<String, Object?>{'action': 'sniff'});
+    }
+
     rules.add(<String, Object?>{
       'port': 53,
       'network': 'udp',
-      'outbound': 'dns-out',
+      'action': 'hijack-dns',
     });
     rules.add(<String, Object?>{
       'port': 53,
       'network': 'tcp',
-      'outbound': 'dns-out',
-    });
-    rules.add(<String, Object?>{
-      'port': 853,
-      'network': 'tcp',
-      'outbound': 'dns-out',
+      'action': 'hijack-dns',
     });
 
     rules.add(<String, Object?>{
       'ip_cidr': const <String>['172.19.0.2/32'],
       'port': 53,
-      'outbound': 'dns-out',
-    });
-    rules.add(<String, Object?>{
-      'ip_cidr': const <String>['172.19.0.2/32'],
-      'port': 853,
-      'outbound': 'dns-out',
+      'action': 'hijack-dns',
     });
 
-    rules.add(<String, Object?>{
-      'ip_cidr': const <String>['::/0'],
-      'outbound': 'block',
-    });
-    if (!_usesUdpNativeTransport(profile)) {
+    if (settings.route.ipv6RouteMode == SingboxIpv6RouteMode.disable) {
+      rules.add(<String, Object?>{
+        'ip_cidr': const <String>['::/0'],
+        'outbound': 'block',
+      });
+    }
+    if (settings.route.blockQuicOnTcpProfiles &&
+        !_usesUdpNativeTransport(profile)) {
       rules.add(<String, Object?>{
         'network': 'udp',
         'port': 443,
@@ -54,7 +52,7 @@ class SingboxRouteRulesBuilder {
     }
 
     if (includeDnsRoutingRule) {
-      rules.add(<String, Object?>{'protocol': 'dns', 'outbound': 'dns-out'});
+      rules.add(<String, Object?>{'protocol': 'dns', 'action': 'hijack-dns'});
     }
 
     final bool bypassPrivateNetworks =
@@ -81,6 +79,20 @@ class SingboxRouteRulesBuilder {
     if (directCidrs.isNotEmpty) {
       rules.add(<String, Object?>{
         'ip_cidr': directCidrs,
+        'outbound': 'direct',
+      });
+    }
+
+    for (final String ruleSetTag in bypassPolicy.directRuleSets) {
+      rules.add(<String, Object?>{
+        'rule_set': ruleSetTag,
+        'outbound': 'direct',
+      });
+    }
+
+    for (final SingboxRuleSet ruleSet in settings.route.ruleSets) {
+      rules.add(<String, Object?>{
+        'rule_set': ruleSet.tag,
         'outbound': 'direct',
       });
     }

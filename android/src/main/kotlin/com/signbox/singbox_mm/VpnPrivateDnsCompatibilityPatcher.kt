@@ -9,7 +9,8 @@ import org.json.JSONObject
 internal object VpnPrivateDnsCompatibilityPatcher {
     private const val PRIVATE_DNS_BOOTSTRAP_TAG = "dns-private-bootstrap"
     private const val PRIVATE_DNS_BOOTSTRAP_ADDRESS = "1.1.1.1"
-    private const val DNS_OUTBOUND_TAG = "dns-out"
+    private const val DNS_HIJACK_ACTION = "hijack-dns"
+    private const val LEGACY_DNS_OUTBOUND_TAG = "dns-out"
     private const val DIRECT_OUTBOUND_TAG = "direct"
     private const val SYNTHETIC_DNS_GATEWAY_V4 = "172.19.0.2/32"
     private const val SYNTHETIC_DNS_GATEWAY_V6 = "fdfe:dcba:9876::2/128"
@@ -55,37 +56,30 @@ internal object VpnPrivateDnsCompatibilityPatcher {
             val routeRules = route.optJSONArray("rules") ?: JSONArray().also {
                 route.put("rules", it)
             }
-            removeGlobalDnsOutRule(routeRules, 853, "tcp")
-            if (!containsGlobalDnsOutRule(routeRules, 53, "udp")) {
+            normalizeLegacyDnsOutRules(routeRules)
+            removeDnsHijackRules(routeRules, 853, "tcp")
+            if (!containsGlobalDnsHijackRule(routeRules, 53, "udp")) {
                 routeRules.put(
                     JSONObject()
                         .put("port", 53)
                         .put("network", "udp")
-                        .put("outbound", DNS_OUTBOUND_TAG),
+                        .put("action", DNS_HIJACK_ACTION),
                 )
             }
-            if (!containsGlobalDnsOutRule(routeRules, 53, "tcp")) {
+            if (!containsGlobalDnsHijackRule(routeRules, 53, "tcp")) {
                 routeRules.put(
                     JSONObject()
                         .put("port", 53)
                         .put("network", "tcp")
-                        .put("outbound", DNS_OUTBOUND_TAG),
+                        .put("action", DNS_HIJACK_ACTION),
                 )
             }
-            if (!containsDnsOutSyntheticGatewayRule(routeRules, 53)) {
+            if (!containsDnsHijackSyntheticGatewayRule(routeRules, 53)) {
                 routeRules.put(
                     JSONObject()
                         .put("ip_cidr", JSONArray().put(SYNTHETIC_DNS_GATEWAY_V4).put(SYNTHETIC_DNS_GATEWAY_V6))
                         .put("port", 53)
-                        .put("outbound", DNS_OUTBOUND_TAG),
-                )
-            }
-            if (!containsDnsOutSyntheticGatewayRule(routeRules, 853)) {
-                routeRules.put(
-                    JSONObject()
-                        .put("ip_cidr", JSONArray().put(SYNTHETIC_DNS_GATEWAY_V4).put(SYNTHETIC_DNS_GATEWAY_V6))
-                        .put("port", 853)
-                        .put("outbound", DNS_OUTBOUND_TAG),
+                        .put("action", DNS_HIJACK_ACTION),
                 )
             }
             if (!containsDirectRouteRuleForHost(routeRules, privateDnsHost)) {
@@ -152,10 +146,20 @@ internal object VpnPrivateDnsCompatibilityPatcher {
         return false
     }
 
-    private fun containsDnsOutSyntheticGatewayRule(rules: JSONArray, port: Int): Boolean {
+    private fun normalizeLegacyDnsOutRules(rules: JSONArray) {
         for (index in 0 until rules.length()) {
             val item = rules.optJSONObject(index) ?: continue
-            if (!item.optString("outbound").equals(DNS_OUTBOUND_TAG, ignoreCase = true)) {
+            if (item.optString("outbound").equals(LEGACY_DNS_OUTBOUND_TAG, ignoreCase = true)) {
+                item.remove("outbound")
+                item.put("action", DNS_HIJACK_ACTION)
+            }
+        }
+    }
+
+    private fun containsDnsHijackSyntheticGatewayRule(rules: JSONArray, port: Int): Boolean {
+        for (index in 0 until rules.length()) {
+            val item = rules.optJSONObject(index) ?: continue
+            if (!isDnsHijackRule(item)) {
                 continue
             }
             if (item.optInt("port", -1) != port) {
@@ -169,14 +173,14 @@ internal object VpnPrivateDnsCompatibilityPatcher {
         return false
     }
 
-    private fun containsGlobalDnsOutRule(
+    private fun containsGlobalDnsHijackRule(
         rules: JSONArray,
         port: Int,
         network: String,
     ): Boolean {
         for (index in 0 until rules.length()) {
             val item = rules.optJSONObject(index) ?: continue
-            if (!item.optString("outbound").equals(DNS_OUTBOUND_TAG, ignoreCase = true)) {
+            if (!isDnsHijackRule(item)) {
                 continue
             }
             if (item.optInt("port", -1) != port) {
@@ -194,7 +198,7 @@ internal object VpnPrivateDnsCompatibilityPatcher {
         return false
     }
 
-    private fun removeGlobalDnsOutRule(
+    private fun removeDnsHijackRules(
         rules: JSONArray,
         port: Int,
         network: String,
@@ -207,7 +211,7 @@ internal object VpnPrivateDnsCompatibilityPatcher {
                 continue
             }
 
-            if (!item.optString("outbound").equals(DNS_OUTBOUND_TAG, ignoreCase = true)) {
+            if (!isDnsHijackRule(item)) {
                 retained.add(item)
                 continue
             }
@@ -220,10 +224,6 @@ internal object VpnPrivateDnsCompatibilityPatcher {
                 retained.add(item)
                 continue
             }
-            val cidr = item.optJSONArray("ip_cidr")
-            if (cidr != null && cidr.length() > 0) {
-                retained.add(item)
-            }
         }
 
         while (rules.length() > 0) {
@@ -232,6 +232,11 @@ internal object VpnPrivateDnsCompatibilityPatcher {
         for (item in retained) {
             rules.put(item)
         }
+    }
+
+    private fun isDnsHijackRule(item: JSONObject): Boolean {
+        return item.optString("action").equals(DNS_HIJACK_ACTION, ignoreCase = true) ||
+            item.optString("outbound").equals(LEGACY_DNS_OUTBOUND_TAG, ignoreCase = true)
     }
 
     private fun containsDirectRouteRuleForHost(rules: JSONArray, host: String): Boolean {

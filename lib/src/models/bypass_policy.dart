@@ -12,6 +12,7 @@ class BypassPolicy {
     ],
     this.remoteDnsAddress = 'https://1.1.1.1/dns-query',
     this.bypassPrivateNetworks = true,
+    this.directRuleSets = const <String>[],
   });
 
   final BypassPolicyPreset preset;
@@ -20,6 +21,7 @@ class BypassPolicy {
   final List<String> blockedDomainKeywords;
   final String remoteDnsAddress;
   final bool bypassPrivateNetworks;
+  final List<String> directRuleSets;
 
   Map<String, Object?> toMap() {
     return <String, Object?>{
@@ -29,6 +31,7 @@ class BypassPolicy {
       'blockedDomainKeywords': blockedDomainKeywords,
       'remoteDnsAddress': remoteDnsAddress,
       'bypassPrivateNetworks': bypassPrivateNetworks,
+      'directRuleSets': directRuleSets,
     };
   }
 }

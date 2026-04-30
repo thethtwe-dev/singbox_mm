@@ -1,9 +1,12 @@
 package com.signbox.singbox_mm
 
+import android.content.Context
+import io.nekohasekai.libbox.Libbox
 import io.flutter.plugin.common.MethodChannel.Result
 import java.util.concurrent.ExecutorService
 
 internal class PluginConfigOperations(
+    private val context: Context,
     private val executor: ExecutorService,
     private val runtimeConfigStore: PluginRuntimeConfigStore,
     private val postSuccess: (Result, Any?) -> Unit,
@@ -18,6 +21,34 @@ internal class PluginConfigOperations(
                 postSuccess(result, null)
             } catch (error: Throwable) {
                 postError(result, "INIT_FAILED", error.message ?: "Initialization failed")
+            }
+        }
+    }
+
+    fun validateConfig(arguments: Any?, result: Result) {
+        executor.execute {
+            try {
+                @Suppress("UNCHECKED_CAST")
+                val args = arguments as? Map<String, Any?> ?: emptyMap()
+                val config = args["config"] as? String
+                if (config.isNullOrBlank()) {
+                    postError(result, "INVALID_CONFIG", "Missing config payload")
+                    return@execute
+                }
+
+                VpnCoreSetupManager.ensure(context)
+                Libbox.checkConfig(config)
+                val normalized =
+                    runCatching {
+                        Libbox.formatConfig(config).value
+                    }.getOrNull().takeUnless { it.isNullOrBlank() } ?: config
+                postSuccess(result, normalized)
+            } catch (error: Throwable) {
+                postError(
+                    result,
+                    "CONFIG_VALIDATE_FAILED",
+                    error.message ?: "Config validation failed",
+                )
             }
         }
     }

@@ -17,6 +17,9 @@ internal object VpnStateUpdateBroadcaster {
             .setPackage(packageName)
             .putExtra(stateExtraKey, state)
             .putExtra(errorExtraKey, error)
-        context.sendBroadcast(intent)
+        context.sendBroadcast(
+            intent,
+            SignboxLibboxServiceContract.stateBroadcastPermission(packageName),
+        )
     }
 }

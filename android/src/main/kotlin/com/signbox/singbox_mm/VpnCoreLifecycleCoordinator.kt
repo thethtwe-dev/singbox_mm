@@ -1,10 +1,10 @@
 package com.signbox.singbox_mm
 
 import android.os.ParcelFileDescriptor
-import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
 
 internal data class VpnPreparedConfig(
@@ -20,7 +20,6 @@ internal data class VpnPreparedConfigResult(
 
 internal data class VpnCoreRuntime(
     val commandServer: CommandServer,
-    val boxService: BoxService,
 )
 
 internal object VpnCoreLifecycleCoordinator {
@@ -67,29 +66,22 @@ internal object VpnCoreLifecycleCoordinator {
         commandHandler: CommandServerHandler,
         commandPort: Int,
     ): VpnCoreRuntime {
-        val service = Libbox.newService(configContent, platformInterface)
-        val server = CommandServer(commandHandler, commandPort)
-        server.setService(service)
+        // v1.13: CommandServer(handler, platformInterface)
+        val server = CommandServer(commandHandler, platformInterface)
         server.start()
-        return VpnCoreRuntime(commandServer = server, boxService = service)
+        return VpnCoreRuntime(commandServer = server)
     }
 
-    fun startRuntimeService(boxService: BoxService) {
-        boxService.start()
-        if (boxService.needWIFIState()) {
-            runCatching {
-                boxService.updateWIFIState()
-            }
-        }
+    fun startRuntimeService(commandServer: CommandServer, configContent: String) {
+        commandServer.startOrReloadService(configContent, OverrideOptions())
     }
 
     fun stopRuntime(
-        boxService: BoxService?,
         commandServer: CommandServer?,
         tunFileDescriptor: ParcelFileDescriptor?,
     ) {
         runCatching {
-            boxService?.close()
+            commandServer?.closeService()
         }
         runCatching {
             commandServer?.close()

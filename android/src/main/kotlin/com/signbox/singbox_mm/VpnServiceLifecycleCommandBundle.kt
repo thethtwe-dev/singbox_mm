@@ -24,7 +24,7 @@ internal class VpnServiceLifecycleCommandBundle(
         VpnServiceCommandCoordinator(
             readCurrentConfigPath = { runtimeSession.configPath },
             readPersistedRuntimeState = readPersistedRuntimeState,
-            hasRunningCore = { runtimeSession.boxService != null },
+            hasRunningCore = { runtimeSession.commandServer != null },
             readConnectedDetail = { runtimeSession.coreNotificationDetail },
             actionStop = SignboxLibboxServiceContract.ACTION_STOP,
             actionRestart = SignboxLibboxServiceContract.ACTION_RESTART,

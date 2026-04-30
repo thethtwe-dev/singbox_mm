@@ -148,6 +148,11 @@ void main() {
     expect(parsed.profile.transport, VpnTransport.grpc);
     expect(parsed.profile.grpcServiceName, 'grpc-service');
     expect(parsed.profile.websocketHeaders['Host'], 'grpc.edge.example.com');
+    expect(parsed.profile.tls.alpn, const <String>['h2']);
+    expect(
+      parsed.profile.extra['_sbmm_grpc_authority'],
+      'grpc.edge.example.com',
+    );
   });
 
   test('parse vless reality aliases including fingerprint and spx', () {
@@ -242,7 +247,7 @@ void main() {
     expect(parsed.profile.tls.serverName, 'example.com');
   });
 
-  test('parse vmess xhttp base64 link remaps to httpUpgrade on port 80', () {
+  test('parse vmess xhttp base64 link normalizes to http on port 80', () {
     final String vmessJson = jsonEncode(<String, String>{
       'v': '2',
       'ps': 'vmess-xhttp',
@@ -260,7 +265,7 @@ void main() {
     final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
 
     expect(parsed.profile.protocol, VpnProtocol.vmess);
-    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.transport, VpnTransport.http);
     expect(parsed.warnings, contains(contains('xhttp')));
     expect(parsed.profile.server, 'app.example.com');
     expect(parsed.profile.serverPort, 80);
@@ -269,7 +274,7 @@ void main() {
     expect(parsed.profile.tls.enabled, isFalse);
   });
 
-  test('parse trojan xhttp link remaps to httpUpgrade transport', () {
+  test('parse trojan xhttp link normalizes to http transport', () {
     final ParsedVpnConfig parsed = parser.parse(
       'trojan://secret-pass@app.example.com:80'
       '?type=xhttp'
@@ -280,7 +285,7 @@ void main() {
     );
 
     expect(parsed.profile.protocol, VpnProtocol.trojan);
-    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.transport, VpnTransport.http);
     expect(parsed.profile.serverPort, 80);
     expect(parsed.profile.websocketPath, '/upgrade');
     expect(parsed.profile.websocketHeaders['Host'], 'app.example.com');
@@ -288,7 +293,7 @@ void main() {
     expect(parsed.warnings, contains(contains('xhttp')));
   });
 
-  test('parse vmess xhttp with h3 alpn remaps to httpUpgrade transport', () {
+  test('parse vmess xhttp with h3 alpn normalizes to http transport', () {
     final String vmessJson = jsonEncode(<String, String>{
       'v': '2',
       'ps': 'vmess-xhttp-h3',
@@ -306,7 +311,7 @@ void main() {
     final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
 
     expect(parsed.profile.protocol, VpnProtocol.vmess);
-    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.transport, VpnTransport.http);
     expect(parsed.profile.serverPort, 443);
     expect(parsed.profile.websocketPath, '/QmCus87aYKFEQyuUX7rUfHXH4');
     expect(parsed.profile.websocketHeaders['Host'], 'app.example.com');
@@ -315,7 +320,7 @@ void main() {
     expect(parsed.warnings, contains(contains('xhttp')));
   });
 
-  test('parse vmess xhttp with tls and no hints remaps to httpUpgrade', () {
+  test('parse vmess xhttp with tls and no hints normalizes to http', () {
     final String vmessJson = jsonEncode(<String, String>{
       'v': '2',
       'ps': 'vmess-xhttp-tls-default',
@@ -332,7 +337,7 @@ void main() {
     final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
 
     expect(parsed.profile.protocol, VpnProtocol.vmess);
-    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.transport, VpnTransport.http);
     expect(parsed.profile.serverPort, 443);
     expect(parsed.profile.websocketPath, '/QmCus87aYKFEQyuUX7rUfHXH4');
     expect(parsed.profile.websocketHeaders['Host'], 'app.example.com');
@@ -340,7 +345,7 @@ void main() {
     expect(parsed.warnings, contains(contains('xhttp')));
   });
 
-  test('parse vmess xhttp with tls field only remaps to httpUpgrade', () {
+  test('parse vmess xhttp with tls field only normalizes to http', () {
     final String vmessJson = jsonEncode(<String, String>{
       'v': '2',
       'ps': 'vmess-xhttp-tls-field',
@@ -356,13 +361,13 @@ void main() {
     final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
 
     expect(parsed.profile.protocol, VpnProtocol.vmess);
-    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.transport, VpnTransport.http);
     expect(parsed.profile.serverPort, 443);
     expect(parsed.profile.tls.enabled, isTrue);
     expect(parsed.warnings, contains(contains('xhttp')));
   });
 
-  test('parse vmess xhttp remaps to httpUpgrade when security is none', () {
+  test('parse vmess xhttp normalizes to http when security is none', () {
     final String vmessJson = jsonEncode(<String, String>{
       'v': '2',
       'ps': 'vmess-xhttp-none-hints',
@@ -381,14 +386,14 @@ void main() {
     final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
 
     expect(parsed.profile.protocol, VpnProtocol.vmess);
-    expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+    expect(parsed.profile.transport, VpnTransport.http);
     expect(parsed.profile.serverPort, 80);
     expect(parsed.profile.tls.enabled, isFalse);
     expect(parsed.warnings, contains(contains('xhttp')));
   });
 
   test(
-    'parse vmess xhttp with explicit mode hint remaps to httpUpgrade transport',
+    'parse vmess xhttp with explicit mode hint normalizes to http transport',
     () {
       final String vmessJson = jsonEncode(<String, String>{
         'v': '2',
@@ -408,13 +413,246 @@ void main() {
       final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
 
       expect(parsed.profile.protocol, VpnProtocol.vmess);
-      expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+      expect(parsed.profile.transport, VpnTransport.http);
       expect(parsed.profile.serverPort, 443);
       expect(parsed.profile.websocketPath, '/QmCus87aYKFEQyuUX7rUfHXH4');
       expect(parsed.profile.websocketHeaders['Host'], 'app.example.com');
       expect(parsed.profile.tls.enabled, isTrue);
       expect(parsed.profile.tls.alpn, <String>['h3', 'h2']);
       expect(parsed.warnings, contains(contains('xhttp')));
+    },
+  );
+
+  test(
+    'parse vless httpupgrade qyu profile promotes to http for xray core hint',
+    () {
+      final ParsedVpnConfig parsed = parser.parse(
+        'vless://a956ef5e-e7a1-4e77-b77c-7d5aff9f79e0@54.251.185.72:443'
+        '?type=httpupgrade'
+        '&path=%2FWJ3Rr868sGO1irPQyuUX7rUfHXH4'
+        '&host=54.251.185.72'
+        '&security=tls'
+        '&sni=54.251.185.72'
+        '&allowinsecure=1'
+        '&fp=chrome'
+        '&alpn=http%2F1.1'
+        '&hiddify=1'
+        '&encryption=none'
+        '&core=xray'
+        '&extra=%7B%22headers%22%3A%7B%22User-Agent%22%3A%22UA-From-Extra%22%2C%22Pragma%22%3A%22no-cache%22%7D%7D'
+        '#qyu-xhttp',
+      );
+
+      expect(parsed.profile.transport, VpnTransport.http);
+      expect(parsed.profile.websocketPath, '/WJ3Rr868sGO1irPQyuUX7rUfHXH4');
+      expect(parsed.profile.websocketHeaders['Host'], '54.251.185.72');
+      expect(parsed.profile.websocketHeaders['User-Agent'], 'UA-From-Extra');
+      expect(parsed.profile.websocketHeaders['Pragma'], 'no-cache');
+      expect(parsed.profile.extra['_sbmm_transport_alias'], 'xhttp');
+      expect(
+        parsed.warnings.any(
+          (String item) => item.contains('promoted httpupgrade'),
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'parse vless httpupgrade hmd profile keeps httpupgrade and preserves headers',
+    () {
+      final ParsedVpnConfig parsed = parser.parse(
+        'vless://a956ef5e-e7a1-4e77-b77c-7d5aff9f79e0@54.251.185.72:443'
+        '?type=httpupgrade'
+        '&path=%2FWJ3Rr868sGO1irPhmdH6Ksn4SHe'
+        '&host=54.251.185.72'
+        '&headers=%7B%27User-Agent%27%3A%27UA-From-Headers%27%2C%27Pragma%27%3A%27no-cache%27%7D'
+        '&security=tls'
+        '&sni=54.251.185.72'
+        '&allowinsecure=1'
+        '&fp=chrome'
+        '&alpn=http%2F1.1'
+        '&hiddify=1'
+        '&encryption=none'
+        '#hmd-httpupgrade',
+      );
+
+      expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+      expect(parsed.profile.websocketPath, '/WJ3Rr868sGO1irPhmdH6Ksn4SHe');
+      expect(parsed.profile.websocketHeaders['Host'], '54.251.185.72');
+      expect(parsed.profile.websocketHeaders['User-Agent'], 'UA-From-Headers');
+      expect(parsed.profile.websocketHeaders['Pragma'], 'no-cache');
+      expect(parsed.profile.extra['_sbmm_transport_alias'], 'httpupgrade');
+      expect(
+        parsed.warnings.any(
+          (String item) => item.contains('promoted httpupgrade'),
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'parse vmess httpupgrade qyu profile keeps httpupgrade without explicit xhttp hints',
+    () {
+      final ParsedVpnConfig parsed = parser.parse(
+        'vmess://a956ef5e-e7a1-4e77-b77c-7d5aff9f79e0@app.marketingagencymm.com:443'
+        '?type=httpupgrade'
+        '&path=%2FQmCus87aYKFEQyuUX7rUfHXH4'
+        '&host=app.marketingagencymm.com'
+        '&security=tls'
+        '&sni=app.marketingagencymm.com'
+        '&fp=chrome'
+        '&alpn=http%2F1.1'
+        '&aid=0'
+        '&scy=auto'
+        '#vmess-qyu-httpupgrade',
+      );
+
+      expect(parsed.profile.transport, VpnTransport.httpUpgrade);
+      expect(parsed.profile.websocketPath, '/QmCus87aYKFEQyuUX7rUfHXH4');
+      expect(
+        parsed.profile.websocketHeaders['Host'],
+        'app.marketingagencymm.com',
+      );
+      expect(parsed.profile.extra['_sbmm_transport_alias'], 'httpupgrade');
+      expect(
+        parsed.warnings.any(
+          (String item) => item.contains('promoted httpupgrade'),
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'parse vless downloadSettings xhttp overrides top-level alpn and transport',
+    () {
+      const String raw =
+          'vless://a956ef5e-e7a1-4e77-b77c-7d5aff9f79e0@app.marketingagencymm.com:443'
+          '?type=httpupgrade'
+          '&path=%2FWJ3Rr868sGO1irPQyuUX7rUfHXH4'
+          '&host=app.marketingagencymm.com'
+          '&security=tls'
+          '&sni=app.marketingagencymm.com'
+          '&allowinsecure=1'
+          '&fp=chrome'
+          '&alpn=h3'
+          '&hiddify=1'
+          '&encryption=none'
+          '&core=xray'
+          '&extra=%7B%22headers%22%3A%7B%22User-Agent%22%3A%22Mozilla%2F5.0+%28Linux%3B+Android+10%3B+K%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F144.0.0.0+Mobile+Safari%2F537.36%22%2C%22Pragma%22%3A%22no-cache%22%7D%2C%22downloadSettings%22%3A%7B%22address%22%3A%22app.marketingagencymm.com%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22%2FWJ3Rr868sGO1irPQyuUX7rUfHXH4%22%2C%22host%22%3A%22app.marketingagencymm.com%22%2C%22mode%22%3A%22auto%22%2C%22extra%22%3A%7B%22headers%22%3A%7B%22User-Agent%22%3A%22Mozilla%2F5.0+%28Linux%3B+Android+10%3B+K%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F144.0.0.0+Mobile+Safari%2F537.36%22%2C%22Pragma%22%3A%22no-cache%22%7D%7D%7D%2C%22security%22%3A%22tls%22%2C%22tlsSettings%22%3A%7B%22serverName%22%3A%22app.marketingagencymm.com%22%2C%22allowInsecure%22%3Atrue%2C%22fingerprint%22%3A%22chrome%22%2C%22alpn%22%3A%5B%22http%2F1.1%22%5D%7D%7D%7D'
+          '#vless-downloadsettings-xhttp';
+
+      final ParsedVpnConfig parsed = parser.parse(raw);
+
+      expect(parsed.profile.transport, VpnTransport.http);
+      expect(parsed.profile.websocketPath, '/WJ3Rr868sGO1irPQyuUX7rUfHXH4');
+      expect(
+        parsed.profile.websocketHeaders['Host'],
+        'app.marketingagencymm.com',
+      );
+      expect(parsed.profile.tls.enabled, isTrue);
+      expect(parsed.profile.tls.serverName, 'app.marketingagencymm.com');
+      expect(parsed.profile.tls.allowInsecure, isTrue);
+      expect(parsed.profile.tls.utlsFingerprint, 'chrome');
+      expect(
+        parsed.profile.tls.alpn,
+        const <String>['http/1.1'],
+        reason:
+            'nested downloadSettings.tlsSettings.alpn must override top-level alpn=h3',
+      );
+    },
+  );
+
+  test(
+    'parse trojan downloadSettings grpc overrides endpoint and authority',
+    () {
+      final String extra = Uri.encodeComponent(
+        jsonEncode(<String, Object?>{
+          'downloadSettings': <String, Object?>{
+            'address': 'grpc-edge.example.com',
+            'port': 443,
+            'network': 'grpc',
+            'grpcSettings': <String, Object?>{
+              'serviceName': 'my-grpc-service',
+              'authority': 'grpc-authority.example.com',
+              'mode': 'multi',
+            },
+            'tlsSettings': <String, Object?>{
+              'serverName': 'grpc-edge.example.com',
+              'allowInsecure': true,
+              'alpn': <String>['h2'],
+            },
+          },
+        }),
+      );
+
+      final ParsedVpnConfig parsed = parser.parse(
+        'trojan://secret@legacy.example.com:8443'
+        '?type=tcp'
+        '&security=tls'
+        '&extra=$extra'
+        '#trojan-ds-grpc',
+      );
+
+      expect(parsed.profile.server, 'grpc-edge.example.com');
+      expect(parsed.profile.serverPort, 443);
+      expect(parsed.profile.transport, VpnTransport.grpc);
+      expect(parsed.profile.grpcServiceName, 'my-grpc-service');
+      expect(
+        parsed.profile.extra['_sbmm_grpc_authority'],
+        'grpc-authority.example.com',
+      );
+      expect(parsed.profile.extra['_sbmm_grpc_mode'], 'multi');
+      expect(parsed.profile.tls.enabled, isTrue);
+      expect(parsed.profile.tls.serverName, 'grpc-edge.example.com');
+      expect(parsed.profile.tls.allowInsecure, isTrue);
+      expect(parsed.profile.tls.alpn, const <String>['h2']);
+    },
+  );
+
+  test(
+    'parse shadowsocks downloadSettings overrides endpoint and transport path',
+    () {
+      const String credentials = 'aes-256-gcm:secret-pass';
+      final String ssAuth = base64.encode(utf8.encode(credentials));
+      final String extra = Uri.encodeComponent(
+        jsonEncode(<String, Object?>{
+          'downloadSettings': <String, Object?>{
+            'address': 'ss-edge.example.com',
+            'port': 9443,
+            'network': 'xhttp',
+            'xhttpSettings': <String, Object?>{
+              'path': '/xhttp-path',
+              'host': 'ss-cdn.example.com',
+            },
+            'tlsSettings': <String, Object?>{
+              'serverName': 'ss-edge.example.com',
+              'alpn': <String>['http/1.1'],
+            },
+          },
+        }),
+      );
+
+      final ParsedVpnConfig parsed = parser.parse(
+        'ss://$ssAuth@legacy.example.com:8388'
+        '?type=httpupgrade'
+        '&path=%2Fold'
+        '&host=legacy.example.com'
+        '&security=tls'
+        '&extra=$extra'
+        '#ss-ds-xhttp',
+      );
+
+      expect(parsed.profile.server, 'ss-edge.example.com');
+      expect(parsed.profile.serverPort, 9443);
+      expect(parsed.profile.transport, VpnTransport.http);
+      expect(parsed.profile.websocketPath, '/xhttp-path');
+      expect(parsed.profile.websocketHeaders['Host'], 'ss-cdn.example.com');
+      expect(parsed.profile.tls.enabled, isTrue);
+      expect(parsed.profile.tls.serverName, 'ss-edge.example.com');
+      expect(parsed.profile.tls.alpn, const <String>['http/1.1']);
     },
   );
 
@@ -724,11 +962,10 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@example.org:8388#edge-b
     expect(parsed.entries.first.scheme, 'sbmm');
   });
   test(
-    'config builder: xhttp is remapped to httpupgrade transport (compat regression)',
+    'config builder: xhttp is normalized to http transport (compat regression)',
     () {
-      // Regression test: xhttp is NOT supported by sing-box. The parser and
-      // config builder must silently remap xhttp → httpupgrade so connections
-      // succeed instead of producing PROTOCOL_ERROR or 400 Bad Request.
+      // Regression test: xray-style xhttp links must normalize to sing-box
+      // `http` transport (not `httpupgrade`) so modern CDN/xhttp profiles work.
       final String vmessJson = jsonEncode(<String, String>{
         'v': '2',
         'ps': 'xhttp-h11-regression',
@@ -745,11 +982,11 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@example.org:8388#edge-b
       final String vmessPayload = base64.encode(utf8.encode(vmessJson));
       final ParsedVpnConfig parsed = parser.parse('vmess://$vmessPayload');
 
-      // Parse-level: profile transport must be httpUpgrade after remap.
+      // Parse-level: profile transport must normalize to http.
       expect(
         parsed.profile.transport,
-        VpnTransport.httpUpgrade,
-        reason: 'xhttp must be remapped to httpUpgrade by the parser',
+        VpnTransport.http,
+        reason: 'xhttp must be normalized to http by the parser',
       );
       // A warning must be emitted so developers know the remap happened.
       expect(
@@ -779,11 +1016,11 @@ ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@example.org:8388#edge-b
                 MapEntry<String, Object?>(key as String, value),
           );
 
-      // The generated transport type must be httpupgrade, not http.
+      // The generated transport type must be http, not httpupgrade.
       expect(
         transport['type'],
-        equals('httpupgrade'),
-        reason: 'config builder must emit httpupgrade transport, not http',
+        equals('http'),
+        reason: 'config builder must emit http transport for xhttp links',
       );
     },
   );

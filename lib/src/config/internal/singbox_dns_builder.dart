@@ -60,6 +60,7 @@ class SingboxDnsBuilder {
     final String resolvedDirectAddress = _sanitizeDnsAddress(
       directAddress,
       fallback: _strictDirectDns,
+      allowLocal: true,
     );
     final String dohFallbackAddress = settings.dns.dohFallbackDns.trim();
     final bool enableDohFallback =
@@ -146,7 +147,6 @@ class SingboxDnsBuilder {
     servers.add(<String, Object?>{
       'tag': 'dns-direct',
       'address': resolvedDirectAddress,
-      'detour': 'direct',
       'strategy': resolvedDirectStrategy,
     });
 
@@ -157,11 +157,21 @@ class SingboxDnsBuilder {
       'final': preferDirectDohFallback ? 'dns-remote-fallback' : 'dns-remote',
       'independent_cache': true,
     };
+    if (settings.dns.timeout != null) {
+      dns['timeout'] = _formatDuration(settings.dns.timeout!);
+    }
     dns['fakeip'] = <String, Object?>{
       'enabled': true,
       'inet4_range': _strictFakeIpInet4Range,
     };
     return dns;
+  }
+
+  String _formatDuration(Duration duration) {
+    if (duration.inDays > 0) return '${duration.inDays}d';
+    if (duration.inHours > 0) return '${duration.inHours}h';
+    if (duration.inMinutes > 0) return '${duration.inMinutes}m';
+    return '${duration.inSeconds}s';
   }
 
   String _resolveDnsStrategy({
@@ -206,12 +216,19 @@ class SingboxDnsBuilder {
     return true;
   }
 
-  String _sanitizeDnsAddress(String address, {required String fallback}) {
+  String _sanitizeDnsAddress(
+    String address, {
+    required String fallback,
+    bool allowLocal = false,
+  }) {
     final String normalized = address.trim();
     if (normalized.isEmpty) {
       return fallback;
     }
     if (normalized.toLowerCase() == 'local') {
+      if (allowLocal) {
+        return 'local';
+      }
       return fallback;
     }
     return normalized;
@@ -245,6 +262,7 @@ class SingboxDnsBuilder {
       'servername',
       'authority',
       'grpc_authority',
+      '_sbmm_grpc_authority',
       'peer',
       'domain',
       'fallback_host',

@@ -97,7 +97,6 @@ internal class VpnCoreServiceCoordinator(
 
         VpnCoreStopFlow.execute(
             request = VpnCoreStopRequest(
-                boxService = runtimeSession.boxService,
                 commandServer = runtimeSession.commandServer,
                 tunFileDescriptor = runtimeSession.tunFileDescriptor,
                 trafficMonitor = trafficMonitor,

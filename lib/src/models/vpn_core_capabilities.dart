@@ -2,8 +2,8 @@ import 'vpn_profile.dart';
 
 /// Transports that the current libbox.so build supports natively.
 /// `xhttp` (Xray splithttp) is intentionally absent — sing-box does not
-/// implement the xhttp/splithttp protocol; xhttp links are remapped to
-/// `httpupgrade` automatically by [VpnConfigParser] and [SingboxConfigBuilder].
+/// expose it as a standalone outbound type; xhttp links are normalized to
+/// sing-box `http` transport by [VpnConfigParser] and [SingboxConfigBuilder].
 const List<VpnTransport> _kSupportedTransports = <VpnTransport>[
   VpnTransport.tcp,
   VpnTransport.ws,
@@ -46,8 +46,8 @@ class VpnCoreCapabilities {
   /// Returns `true` if the sing-box core natively supports [transport].
   ///
   /// Note: `VpnTransport.xhttp` does not exist in this enum because it is
-  /// remapped to [VpnTransport.httpUpgrade] transparently by the parser and
-  /// config builder. A link with `type=xhttp` will use httpUpgrade at runtime.
+  /// normalized to [VpnTransport.http] transparently by the parser and
+  /// config builder. A link with `type=xhttp` will use `http` at runtime.
   bool supportsTransport(VpnTransport transport) {
     return supportedTransports.contains(transport);
   }

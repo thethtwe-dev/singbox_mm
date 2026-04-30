@@ -11,6 +11,7 @@ internal class PluginMethodDispatcher(
         val initialize: String,
         val requestPermission: String,
         val requestNotificationPermission: String,
+        val validateConfig: String,
         val setConfig: String,
         val startVpn: String,
         val stopVpn: String,
@@ -28,6 +29,7 @@ internal class PluginMethodDispatcher(
         val initialize: (Any?, Result) -> Unit,
         val requestPermission: (Result) -> Unit,
         val requestNotificationPermission: (Result) -> Unit,
+        val validateConfig: (Any?, Result) -> Unit,
         val setConfig: (Any?, Result) -> Unit,
         val startVpn: (Result) -> Unit,
         val stopVpn: (Result) -> Unit,
@@ -47,6 +49,7 @@ internal class PluginMethodDispatcher(
             methodNames.requestPermission -> handlers.requestPermission(result)
             methodNames.requestNotificationPermission ->
                 handlers.requestNotificationPermission(result)
+            methodNames.validateConfig -> handlers.validateConfig(call.arguments, result)
             methodNames.setConfig -> handlers.setConfig(call.arguments, result)
             methodNames.startVpn -> handlers.startVpn(result)
             methodNames.stopVpn -> handlers.stopVpn(result)

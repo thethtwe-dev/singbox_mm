@@ -4,12 +4,21 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="${TMPDIR:-/tmp}/signbox_singbox_libbox"
 SRC_DIR="$TMP_DIR/sing-box"
-REF="${SINGBOX_REF:-latest}" # e.g. v1.12.20
+REF="${SINGBOX_REF:-v1.13.11}"
 
 command -v go >/dev/null 2>&1 || {
   echo "Go is required but not found in PATH." >&2
   exit 1
 }
+
+# Force set JAVA_HOME to Android Studio JDK if the current java is broken or missing
+if ! java -version >/dev/null 2>&1; then
+  AS_JDK="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+  if [[ -d "$AS_JDK" ]]; then
+    export JAVA_HOME="$AS_JDK"
+    export PATH="$JAVA_HOME/bin:$PATH"
+  fi
+fi
 
 command -v java >/dev/null 2>&1 || {
   echo "Java is required but not found in PATH." >&2
@@ -42,7 +51,7 @@ gomobile init
 echo "Cloning sing-box source..."
 git clone --depth 1 --branch "$REF" "https://github.com/SagerNet/sing-box" "$SRC_DIR"
 
-TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,with_clash_api,with_conntrack,badlinkname,tfogo_checklinkname0,with_tailscale,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird"
+TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_grpc,with_naive_outbound,with_clash_api,with_conntrack,badlinkname,tfogo_checklinkname0,with_tailscale,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird"
 LD_FLAGS="-X github.com/sagernet/sing-box/constant.Version=$REF -X internal/godebug.defaultGODEBUG=multipathtcp=0 -s -w -buildid= -checklinkname=0"
 AAR_FILE="$TMP_DIR/libbox.aar"
 

@@ -5,12 +5,13 @@ void main() {
   test('gfw preset pack exposes stable preset list', () {
     final List<GfwPresetPack> presets = GfwPresetPack.all();
 
-    expect(presets.length, 4);
+    expect(presets.length, 5);
     expect(presets.map((GfwPresetPack item) => item.mode), <GfwPresetMode>[
       GfwPresetMode.compatibility,
       GfwPresetMode.balanced,
       GfwPresetMode.aggressive,
       GfwPresetMode.extreme,
+      GfwPresetMode.myanmar,
     ]);
 
     final GfwPresetPack balanced = GfwPresetPack.balanced();

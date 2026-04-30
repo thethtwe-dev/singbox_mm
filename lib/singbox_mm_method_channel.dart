@@ -100,6 +100,22 @@ class MethodChannelSignboxVpn extends SignboxVpnPlatform {
   }
 
   @override
+  /// Validates config and returns normalized JSON from native runtime.
+  Future<String> validateConfig(String configJson) async {
+    final String? normalized = await methodChannel.invokeMethod<String>(
+      'validateConfig',
+      <String, Object?>{'config': configJson},
+    );
+    if (normalized == null || normalized.isEmpty) {
+      throw PlatformException(
+        code: 'CONFIG_VALIDATE_EMPTY',
+        message: 'Native validation returned empty config.',
+      );
+    }
+    return normalized;
+  }
+
+  @override
   /// Starts VPN service.
   Future<void> startVpn() {
     return methodChannel.invokeMethod<void>('startVpn');

@@ -57,19 +57,18 @@ internal class VpnServicePlatformGraph(
 
     fun createPlatformInterfaceBridge(
         sendCoreNotification: (CoreNotification) -> Unit,
-        writeCoreLog: (String) -> Unit,
     ): VpnCorePlatformInterfaceBridge {
         return VpnCorePlatformInterfaceBridge(
             tunControlBridge = tunControlBridge,
             platformServiceBridge = platformServiceBridge,
             sendCoreNotification = sendCoreNotification,
-            writeCoreLog = writeCoreLog,
         )
     }
 
     fun createCommandHandlerBridge(
         serviceReload: () -> Unit,
-        postServiceClose: () -> Unit,
+        serviceStop: () -> Unit,
+        writeLog: (String) -> Unit,
     ): VpnCoreCommandHandlerBridge {
         return VpnCoreCommandHandlerBridge(
             readSystemProxyStatus = { platformServiceBridge.getSystemProxyStatus() },
@@ -77,7 +76,8 @@ internal class VpnServicePlatformGraph(
                 platformServiceBridge.setSystemProxyEnabled(isEnabled)
             },
             serviceReload = serviceReload,
-            postServiceClose = postServiceClose,
+            serviceStop = serviceStop,
+            writeLog = writeLog,
         )
     }
 }

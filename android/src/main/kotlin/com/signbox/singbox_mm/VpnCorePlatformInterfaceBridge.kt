@@ -1,5 +1,6 @@
 package com.signbox.singbox_mm
 
+import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.LocalDNSTransport
 import io.nekohasekai.libbox.NetworkInterfaceIterator
@@ -13,7 +14,6 @@ internal class VpnCorePlatformInterfaceBridge(
     private val tunControlBridge: VpnTunControlBridge,
     private val platformServiceBridge: VpnPlatformServiceBridge,
     private val sendCoreNotification: (CoreNotification) -> Unit,
-    private val writeCoreLog: (String) -> Unit,
 ) : PlatformInterface {
     override fun usePlatformAutoDetectInterfaceControl(): Boolean {
         return tunControlBridge.usePlatformAutoDetectInterfaceControl()
@@ -37,22 +37,17 @@ internal class VpnCorePlatformInterfaceBridge(
         sourcePort: Int,
         destinationAddress: String,
         destinationPort: Int,
-    ): Int {
-        return platformServiceBridge.findConnectionOwner(
+    ): ConnectionOwner {
+        val uid = platformServiceBridge.findConnectionOwner(
             ipProtocol = ipProtocol,
             sourceAddress = sourceAddress,
             sourcePort = sourcePort,
             destinationAddress = destinationAddress,
             destinationPort = destinationPort,
         )
-    }
-
-    override fun packageNameByUid(uid: Int): String {
-        return platformServiceBridge.packageNameByUid(uid)
-    }
-
-    override fun uidByPackageName(packageName: String): Int {
-        return platformServiceBridge.uidByPackageName(packageName)
+        return ConnectionOwner().apply {
+            userId = uid
+        }
     }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
@@ -93,9 +88,5 @@ internal class VpnCorePlatformInterfaceBridge(
 
     override fun sendNotification(notification: CoreNotification) {
         sendCoreNotification(notification)
-    }
-
-    override fun writeLog(message: String) {
-        writeCoreLog(message)
     }
 }

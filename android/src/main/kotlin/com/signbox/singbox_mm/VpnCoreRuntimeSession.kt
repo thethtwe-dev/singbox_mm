@@ -1,15 +1,11 @@
 package com.signbox.singbox_mm
 
 import android.os.ParcelFileDescriptor
-import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.CommandServer
 
 internal class VpnCoreRuntimeSession {
     @Volatile
     var commandServer: CommandServer? = null
-
-    @Volatile
-    var boxService: BoxService? = null
 
     @Volatile
     var configPath: String? = null
@@ -32,14 +28,12 @@ internal class VpnCoreRuntimeSession {
 
     fun bindStartOutcome(startOutcome: VpnCoreStartOutcome) {
         commandServer = startOutcome.runtime.commandServer
-        boxService = startOutcome.runtime.boxService
         configPath = startOutcome.preparedConfig.configPath
         profileLabel = startOutcome.preparedConfig.profileLabel
     }
 
     fun clearRuntimeHandles() {
         commandServer = null
-        boxService = null
         tunFileDescriptor = null
         coreNotificationDetail = null
     }

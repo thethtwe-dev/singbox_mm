@@ -1,3 +1,5 @@
+import 'singbox_rule_set.dart';
+
 /// SingboxServiceMode enum.
 enum SingboxServiceMode { vpn, proxyOnly }
 
@@ -146,10 +148,12 @@ class RouteOptions {
     this.blockAdvertisements = false,
     this.bypassLan = false,
     this.resolveDestination = false,
+    this.blockQuicOnTcpProfiles = false,
     this.ipv6RouteMode = SingboxIpv6RouteMode.disable,
     this.regionDirectDomains = const <String>[],
     this.regionDirectCidrs = const <String>[],
     this.extraBlockedKeywords = const <String>[],
+    this.ruleSets = const <SingboxRuleSet>[],
   });
 
   /// Documented field.
@@ -164,6 +168,9 @@ class RouteOptions {
   /// Documented field.
   final bool resolveDestination;
 
+  /// When enabled, block QUIC/UDP:443 for non-UDP-native proxy transports.
+  final bool blockQuicOnTcpProfiles;
+
   /// Documented field.
   final SingboxIpv6RouteMode ipv6RouteMode;
 
@@ -176,6 +183,9 @@ class RouteOptions {
   /// Documented field.
   final List<String> extraBlockedKeywords;
 
+  /// Custom rule-sets for modern routing (v1.8+).
+  final List<SingboxRuleSet> ruleSets;
+
   /// Serializes this object to a map.
   Map<String, Object?> toMap() {
     return <String, Object?>{
@@ -183,10 +193,12 @@ class RouteOptions {
       'blockAdvertisements': blockAdvertisements,
       'bypassLan': bypassLan,
       'resolveDestination': resolveDestination,
+      'blockQuicOnTcpProfiles': blockQuicOnTcpProfiles,
       'ipv6RouteMode': ipv6RouteMode.name,
       'regionDirectDomains': regionDirectDomains,
       'regionDirectCidrs': regionDirectCidrs,
       'extraBlockedKeywords': extraBlockedKeywords,
+      'ruleSets': ruleSets.map((SingboxRuleSet e) => e.toMap()).toList(),
     };
   }
 
@@ -201,6 +213,7 @@ class RouteOptions {
       blockAdvertisements: _readBool(raw['blockAdvertisements'], false),
       bypassLan: _readBool(raw['bypassLan'], false),
       resolveDestination: _readBool(raw['resolveDestination'], false),
+      blockQuicOnTcpProfiles: _readBool(raw['blockQuicOnTcpProfiles'], false),
       ipv6RouteMode: _readEnum(
         raw['ipv6RouteMode'],
         SingboxIpv6RouteMode.values,
@@ -209,6 +222,13 @@ class RouteOptions {
       regionDirectDomains: _readStringList(raw['regionDirectDomains']),
       regionDirectCidrs: _readStringList(raw['regionDirectCidrs']),
       extraBlockedKeywords: _readStringList(raw['extraBlockedKeywords']),
+      ruleSets: (raw['ruleSets'] as List<dynamic>?)
+              ?.map(
+                (dynamic e) =>
+                    SingboxRuleSet.fromMap(e as Map<String, Object?>),
+              )
+              .toList() ??
+          const <SingboxRuleSet>[],
     );
   }
 }
@@ -233,6 +253,7 @@ class DnsOptions {
       'gstatic.com',
       'googleapis.com',
     ],
+    this.timeout,
   });
 
   /// Documented field.
@@ -271,6 +292,9 @@ class DnsOptions {
   /// Documented field.
   final List<String> dohFallbackDomainSuffixes;
 
+  /// DNS query timeout (v1.14+).
+  final Duration? timeout;
+
   /// Creates an instance from a dynamic map.
   factory DnsOptions.fromProvider({
     required DnsProviderPreset preset,
@@ -305,6 +329,7 @@ class DnsOptions {
       enableDohFallback: enableDohFallback,
       dohFallbackDns: dohFallbackDns,
       dohFallbackDomainSuffixes: dohFallbackDomainSuffixes,
+      timeout: null,
     );
   }
 
@@ -323,6 +348,7 @@ class DnsOptions {
       'enableDohFallback': enableDohFallback,
       'dohFallbackDns': dohFallbackDns,
       'dohFallbackDomainSuffixes': dohFallbackDomainSuffixes,
+      'timeoutSeconds': timeout?.inSeconds,
     };
   }
 
@@ -360,6 +386,9 @@ class DnsOptions {
               'googleapis.com',
             ]
           : _readStringList(raw['dohFallbackDomainSuffixes']),
+      timeout: raw.containsKey('timeoutSeconds')
+          ? Duration(seconds: _readInt(raw['timeoutSeconds']) ?? 10)
+          : null,
     );
   }
 }

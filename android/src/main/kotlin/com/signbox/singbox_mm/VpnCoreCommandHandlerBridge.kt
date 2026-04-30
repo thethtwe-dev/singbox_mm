@@ -7,7 +7,8 @@ internal class VpnCoreCommandHandlerBridge(
     private val readSystemProxyStatus: () -> SystemProxyStatus,
     private val applySystemProxyEnabled: (Boolean) -> Unit,
     private val serviceReload: () -> Unit,
-    private val postServiceClose: () -> Unit,
+    private val serviceStop: () -> Unit,
+    private val writeLog: (String) -> Unit,
 ) : CommandServerHandler {
     override fun getSystemProxyStatus(): SystemProxyStatus {
         return readSystemProxyStatus()
@@ -21,7 +22,11 @@ internal class VpnCoreCommandHandlerBridge(
         serviceReload.invoke()
     }
 
-    override fun postServiceClose() {
-        postServiceClose.invoke()
+    override fun serviceStop() {
+        serviceStop.invoke()
+    }
+
+    override fun writeDebugMessage(message: String?) {
+        writeLog.invoke(message ?: "")
     }
 }

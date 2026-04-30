@@ -1,15 +1,16 @@
-// Smoke test for xhttp → httpupgrade transparent remap.
+// Smoke test for xhttp → http transparent normalization.
 //
 // Verifies that the link:
 //   vmess://<base64>  (net=xhttp, host=app.example.com, path=/xyz, tls, alpn=h3,h2)
 //
 // produces a sing-box config where:
-//   - transport.type = "httpupgrade"  ← not "http" or "xhttp"
-//   - transport.path = "/xyz"
-//   - transport.host = "app.example.com"
-//   - transport.headers contains "Host" and "User-Agent"
+//   - transport.type = "http"
+//   - transport.path = "/xyz/"  (xhttp stream-one normalization)
+//   - transport.host = ["app.example.com"]
+//   - transport.method = "POST"
+//   - transport.headers contains "User-Agent"
 //   - tls.enabled = true, tls.server_name = "app.example.com"
-//   - tls.alpn = ["http/1.1"]  (forced by _applyHttpUpgradeAlpnDefaults)
+//   - tls.alpn = ["h2"]  (xhttp/http transport normalization)
 //   - parser emits a compat warning containing "xhttp"
 //   - VpnCoreCapabilities.supportsTransport(VpnTransport.httpUpgrade) = true
 
@@ -51,6 +52,11 @@ class _CapturePlatform
   @override
   Future<void> setConfig(String configJson) async {
     capturedConfig = configJson;
+  }
+
+  @override
+  Future<String> validateConfig(String configJson) async {
+    return configJson;
   }
 
   @override
@@ -140,7 +146,7 @@ String _buildXhttpVmessLink({
 // ---------------------------------------------------------------------------
 void main() {
   test(
-    'smoke: xhttp vmess link is remapped to httpupgrade in sing-box config',
+    'smoke: xhttp vmess link is normalized to http in sing-box config',
     () async {
       final _CapturePlatform platform = _CapturePlatform();
       SignboxVpnPlatform.instance = platform;
@@ -151,20 +157,19 @@ void main() {
       final String link = _buildXhttpVmessLink();
 
       // -----------------------------------------------------------------------
-      // Parse: verify parser-level remap and warning.
+      // Parse: verify parser-level normalization and warning.
       // -----------------------------------------------------------------------
       final ParsedVpnConfig parsed = vpn.parseConfigLink(link);
 
       expect(
         parsed.profile.transport,
-        equals(VpnTransport.httpUpgrade),
-        reason:
-            'parser must remap xhttp → httpUpgrade, not keep the raw xhttp type',
+        equals(VpnTransport.http),
+        reason: 'parser must normalize xhttp → http, not keep raw xhttp type',
       );
       expect(
         parsed.warnings,
         contains(contains('xhttp')),
-        reason: 'parser must emit a compat warning when remapping xhttp',
+        reason: 'parser must emit a compat warning when normalizing xhttp',
       );
 
       // -----------------------------------------------------------------------
@@ -183,7 +188,7 @@ void main() {
       // Pretty-print for visibility in test output.
       // ignore: avoid_print
       print(
-        '\n===== GENERATED CONFIG (xhttp → httpupgrade smoke) =====\n'
+        '\n===== GENERATED CONFIG (xhttp → http smoke) =====\n'
         '${const JsonEncoder.withIndent('  ').convert(config)}\n'
         '========================================================\n',
       );
@@ -198,7 +203,7 @@ void main() {
               .cast<String, dynamic>();
 
       // -----------------------------------------------------------------------
-      // 1. Transport block: must be httpupgrade (not "http" or "xhttp").
+      // 1. Transport block: must be sing-box http.
       // -----------------------------------------------------------------------
       expect(
         outbound.containsKey('transport'),
@@ -211,39 +216,41 @@ void main() {
 
       expect(
         transport['type'],
-        equals('httpupgrade'),
-        reason:
-            'transport.type must be "httpupgrade" after xhttp remap — '
-            '"http" would cause PROTOCOL_ERROR, "xhttp" is not a valid sing-box type',
+        equals('http'),
+        reason: 'transport.type must be "http" after xhttp normalization',
       );
       expect(
         transport['path'],
         equals('/smoke-path'),
-        reason: 'transport.path must be preserved from the original link',
+        reason: 'transport.path must preserve exact xhttp path shape',
       );
       expect(
         transport['host'],
-        equals('app.example.com'),
-        reason: 'transport.host must be preserved',
+        equals(<String>['app.example.com']),
+        reason: 'transport.host must be preserved as sing-box http host list',
       );
-      // httpupgrade builder always injects Host + User-Agent headers.
+      expect(
+        transport['method'],
+        equals('POST'),
+        reason: 'xhttp/http transport must force POST',
+      );
       expect(
         transport.containsKey('headers'),
         isTrue,
-        reason:
-            'httpupgrade transport must include Host and User-Agent headers',
+        reason: 'xhttp/http transport must include User-Agent header',
       );
       final Map<String, dynamic> headers =
           (transport['headers'] as Map<dynamic, dynamic>)
               .cast<String, dynamic>();
       expect(
         headers.containsKey('Host'),
-        isTrue,
-        reason: 'Host header must be present',
+        isFalse,
+        reason:
+            'sing-box http transport uses dedicated host field, not Host header',
       );
 
       // -----------------------------------------------------------------------
-      // 2. TLS: enabled, correct ALPN forced to http/1.1.
+      // 2. TLS: enabled, ALPN normalized for xhttp/http.
       // -----------------------------------------------------------------------
       expect(
         outbound.containsKey('tls'),
@@ -261,10 +268,8 @@ void main() {
       );
       expect(
         tls['alpn'],
-        equals(<String>['http/1.1']),
-        reason:
-            'tls.alpn must be forced to ["http/1.1"] by _applyHttpUpgradeAlpnDefaults '
-            '(httpupgrade uses HTTP/1.1 Upgrade, not HTTP/2)',
+        equals(<String>['h3', 'h2']),
+        reason: 'tls.alpn must preserve explicit xhttp ALPN order',
       );
 
       // -----------------------------------------------------------------------
@@ -293,12 +298,12 @@ void main() {
   );
 
   test(
-    'smoke: subscription parser allowedTransports filters out xhttp-as-http profiles',
+    'smoke: subscription parser allowedTransports handles xhttp-as-http profiles',
     () {
       // Build a subscription with 3 lines:
       //   1. A valid WS link (should pass)
-      //   2. An xhttp link remapped → httpUpgrade (should pass when allowing httpUpgrade)
-      //   3. An xhttp link remapped → httpUpgrade (should be filtered if only ws allowed)
+      //   2. An xhttp link normalized → http (should pass when allowing http)
+      //   3. An xhttp link normalized → http (should be filtered if only ws allowed)
       const String wsLink =
           'vless://aaaaaaaa-bbbb-cccc-dddd-123456789012@ws.example.com:443'
           '?type=ws&security=tls&host=ws.example.com&path=%2Fws#ws-server';
@@ -320,26 +325,22 @@ void main() {
       expect(
         wsOnly.profiles.length,
         equals(1),
-        reason:
-            'allowedTransports={ws} must exclude the xhttp/httpupgrade profile',
+        reason: 'allowedTransports={ws} must exclude the xhttp/http profile',
       );
       expect(wsOnly.profiles.first.transport, equals(VpnTransport.ws));
 
-      // With allowedTransports={httpUpgrade}: only the remapped xhttp is included.
-      final ParsedVpnSubscription httpUpgradeOnly = parser.parse(
+      // With allowedTransports={http}: only the normalized xhttp is included.
+      final ParsedVpnSubscription httpOnly = parser.parse(
         subscriptionPayload,
-        allowedTransports: <VpnTransport>{VpnTransport.httpUpgrade},
+        allowedTransports: <VpnTransport>{VpnTransport.http},
       );
       expect(
-        httpUpgradeOnly.profiles.length,
+        httpOnly.profiles.length,
         equals(1),
         reason:
-            'allowedTransports={httpUpgrade} must include the remapped xhttp profile',
+            'allowedTransports={http} must include the normalized xhttp profile',
       );
-      expect(
-        httpUpgradeOnly.profiles.first.transport,
-        equals(VpnTransport.httpUpgrade),
-      );
+      expect(httpOnly.profiles.first.transport, equals(VpnTransport.http));
     },
   );
 }

@@ -1,3 +1,28 @@
+## 0.1.9
+- **Global Support**: Optimized presets and routing for international network environments.
+- **Myanmar Optimization**: Added a dedicated `Myanmar Optimized` preset for local ISP/Bank bypass.
+- **Sing-box v1.14 Alignment**:
+  - Added `RuleSet` support for modern routing.
+  - Added `dns.timeout` support.
+  - Hardened SSH outbound with `cipher`, `mac`, and `key_exchange` extensions.
+- **Sing-box 1.13 runtime compatibility:** migrated generated TUN and DNS
+  route configuration away from removed legacy fields and `dns-out` outbounds.
+- **Android libbox bridge update:** aligned service startup/reload calls with
+  the current `CommandServer`/`OverrideOptions` API and pinned the fetch script
+  to the tested sing-box release line.
+- **Parser Hardening**:
+  - Improved `xhttp` transport detection (Split-HTTP compatibility).
+  - Added unknown field diagnostics to common protocol parsers.
+  - Parse Reality `spx`/`spider_x` links while omitting unsupported
+    `tls.reality.spider_x` from sing-box JSON.
+- **Android DNS fix:** stop hijacking TCP/853 into the plain DNS handler while
+  preserving strict Private DNS direct-route exceptions.
+- **Android hardening:** constrain runtime config writes to app-private storage,
+  write configs atomically, protect state broadcasts on older Android, and honor
+  TLS/SNI options in native ping checks.
+- **Tests:** updated preset expectations for the Myanmar preset and added
+  regression coverage for sing-box 1.13 config output.
+
 ## 0.1.8
 
 - **Fixed:** `net=xhttp` share links are now remapped to sing-box

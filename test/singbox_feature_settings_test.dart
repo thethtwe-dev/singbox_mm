@@ -14,6 +14,7 @@ void main() {
         blockAdvertisements: true,
         bypassLan: true,
         resolveDestination: true,
+        blockQuicOnTcpProfiles: true,
         ipv6RouteMode: SingboxIpv6RouteMode.prefer,
         regionDirectDomains: <String>['example.com'],
         regionDirectCidrs: <String>['10.0.0.0/8'],
@@ -94,6 +95,7 @@ void main() {
     expect(decoded.advanced.memoryLimit, isTrue);
     expect(decoded.advanced.debugMode, isTrue);
     expect(decoded.route.blockAdvertisements, isTrue);
+    expect(decoded.route.blockQuicOnTcpProfiles, isTrue);
     expect(decoded.route.ipv6RouteMode, SingboxIpv6RouteMode.prefer);
     expect(decoded.dns.providerPreset, DnsProviderPreset.google);
     expect(decoded.dns.remoteDns, 'udp://1.1.1.1');

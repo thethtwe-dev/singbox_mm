@@ -43,7 +43,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  singbox_mm: ^0.1.8
+  singbox_mm: ^0.1.9
 ```
 
 For local development in a monorepo, you can still use a path dependency:
@@ -565,13 +565,14 @@ print('Active: ${result.appliedProfile?.tag}');
 - Android excludes the VPN app package from TUN to avoid self-capture loops.
   - `probeConnectivity()` and UID-based `getStats()` can still show activity even when user-app traffic is failing.
   - For real tunnel health, prefer `stateDetailsStream` (`networkValidated`, `hasInternetCapability`, `detailCode`) plus a real external app test (browser/Telegram/etc).
-- DNS requests to the TUN gateway (`172.19.0.2:53`) are explicitly routed to `dns-out` before private-network bypass rules.
+- Plain DNS requests to the TUN gateway (`172.19.0.2:53`) are explicitly hijacked into the sing-box DNS module before private-network bypass rules. DNS-over-TLS on TCP/853 is not hijacked.
 - In strict-route VPN mode, the TUN inbound keeps an IPv6 address even when `ipv6RouteMode=disable` to prevent app-level IPv6 `No route to host` failures during mixed IPv4/IPv6 app traffic.
   - This prevents `ip_is_private -> direct` from blackholing app DNS on Android.
 - The service applies a strict-Private-DNS compatibility patch on Android:
   - Detects active strict Private DNS hostname.
   - Adds a direct bootstrap DNS server (`1.1.1.1`) for that hostname lookup.
   - Adds direct route exceptions for the strict Private DNS host and TCP/853.
+  - Removes stale TCP/853 DNS hijack rules so DNS-over-TLS is not parsed as plain DNS.
 - If Android still shows `PRIVATE_DNS_BROKEN`, your strict DNS provider may block validation probe domains (`*.dnsotls-ds.metric.gstatic.com`). In that case, switch Private DNS to `Automatic/Off` or use a less filtering strict DNS provider.
 - Ensure your final app architecture includes a compliant VPN service strategy for production distribution.
 - Release builds must keep gomobile bridge classes (`go.Seq`, `go.*`) for libbox JNI.
@@ -651,7 +652,7 @@ If this happens:
 
 1. Try Private DNS `Automatic` and retest.
 2. Or switch strict provider to one that resolves Android validation probe domains.
-3. Keep VPN DNS bootstrap (`1.1.1.1`) and direct TCP/853 exception enabled (already auto-patched by this package).
+3. Keep VPN DNS bootstrap (`1.1.1.1`) and the direct TCP/853 exception enabled; do not hijack TCP/853 into plain DNS.
 
 ### Network Handover Stress Test
 

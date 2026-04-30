@@ -13,6 +13,9 @@ internal object PluginMethodHandlersFactory {
             },
             requestPermission = args.requestVpnPermission,
             requestNotificationPermission = args.requestNotificationPermission,
+            validateConfig = { arguments, result ->
+                configOperations.validateConfig(arguments, result)
+            },
             setConfig = { arguments, result ->
                 configOperations.setConfig(arguments, result)
             },

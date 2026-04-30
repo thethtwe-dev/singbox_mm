@@ -35,47 +35,72 @@ _ParseOutput _parseShadowsocksConfig(
     );
   }
 
-  final Map<String, String> query = parsed.query;
+  final Map<String, String> query = parser.applyDownloadSettingsOverrides(
+    parsed.query,
+  );
+  final _ResolvedEndpoint endpoint = parser._resolveEndpointFromBase(
+    parsed.host,
+    parsed.port,
+    query,
+    scheme: 'shadowsocks',
+  );
   final List<String> warnings = <String>[];
   final String? rawTransport = VpnConfigParser._firstValue(
     query,
     const <String>['type', 'net'],
   );
-  final VpnTransport transport = parser._parseTransport(
+  final VpnTransport parsedTransport = parser._parseTransport(
     rawTransport,
     warnings: warnings,
   );
-  final String? wsHost = parser._extractWsHost(query);
+  final bool promoteHttpUpgrade = parser._shouldPromoteHttpUpgradeToXhttp(
+    rawTransport: rawTransport,
+    query: query,
+  );
+  final VpnTransport transport = promoteHttpUpgrade
+      ? VpnTransport.http
+      : parsedTransport;
+  if (promoteHttpUpgrade) {
+    warnings.add(
+      'Detected xhttp-style profile; promoted httpupgrade to sing-box http transport.',
+    );
+  }
+  final Map<String, String> transportHeaders = parser._extractTransportHeaders(
+    query,
+  );
+  final String? wsHost = VpnConfigParser._firstNonEmpty(<String?>[
+    transportHeaders['Host'],
+    parser._extractWsHost(query),
+  ]);
   final Map<String, Object?> extra = parser._buildShadowsocksExtra(query);
-  parser._attachTransportAlias(extra, rawTransport);
+  parser._attachTransportAlias(
+    extra,
+    rawTransport,
+    forceAlias: promoteHttpUpgrade ? 'xhttp' : null,
+  );
 
   final VpnProfile profile = VpnProfile.shadowsocks(
     tag: parser._buildTag(
       explicitTag: parsed.tag,
       fallbackTag: fallbackTag,
       scheme: 'ss',
-      host: parsed.host,
+      host: endpoint.host,
     ),
-    server: parsed.host,
-    serverPort: parsed.port,
+    server: endpoint.host,
+    serverPort: endpoint.port,
     method: parsed.method,
     password: parsed.password,
     transport: transport,
     websocketPath: parser._extractWsPath(query),
-    websocketHeaders: wsHost == null
-        ? const <String, String>{}
-        : <String, String>{'Host': wsHost},
+    websocketHeaders: transportHeaders,
     grpcServiceName: parser._extractGrpcServiceName(query),
     maxEarlyData: parser._extractWsMaxEarlyData(query),
     earlyDataHeaderName: parser._extractWsEarlyDataHeaderName(query),
     tls: parser._buildTlsOptions(
       query,
-      fallbackServerName: wsHost ?? parsed.host,
+      fallbackServerName: wsHost ?? endpoint.host,
       defaultEnabled: false,
-      defaultAlpn:
-          transport == VpnTransport.ws || transport == VpnTransport.httpUpgrade
-          ? const <String>['http/1.1']
-          : const <String>['h2', 'http/1.1'],
+      defaultAlpn: parser._defaultAlpnForTransport(transport),
     ),
     extra: extra,
   );

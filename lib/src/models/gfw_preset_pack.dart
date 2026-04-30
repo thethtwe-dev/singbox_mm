@@ -3,7 +3,7 @@ import 'singbox_feature_settings.dart';
 import 'traffic_throttle_policy.dart';
 import 'vpn_failover_options.dart';
 
-enum GfwPresetMode { compatibility, balanced, aggressive, extreme }
+enum GfwPresetMode { compatibility, balanced, aggressive, extreme, myanmar }
 
 class GfwPresetPack {
   const GfwPresetPack({
@@ -49,6 +49,8 @@ class GfwPresetPack {
         return aggressive();
       case GfwPresetMode.extreme:
         return extreme();
+      case GfwPresetMode.myanmar:
+        return myanmar();
     }
   }
 
@@ -58,6 +60,7 @@ class GfwPresetPack {
       _balanced,
       _aggressive,
       _extreme,
+      _myanmar,
     ];
   }
 
@@ -65,6 +68,7 @@ class GfwPresetPack {
   static GfwPresetPack balanced() => _balanced;
   static GfwPresetPack aggressive() => _aggressive;
   static GfwPresetPack extreme() => _extreme;
+  static GfwPresetPack myanmar() => _myanmar;
 
   static const GfwPresetPack _compatibility = GfwPresetPack(
     mode: GfwPresetMode.compatibility,
@@ -385,6 +389,66 @@ class GfwPresetPack {
         connectivityProbeTimeout: Duration(milliseconds: 1500),
         maxConsecutiveFailures: 1,
       ),
+    ),
+  );
+
+  static const GfwPresetPack _myanmar = GfwPresetPack(
+    mode: GfwPresetMode.myanmar,
+    name: 'Myanmar Optimized',
+    description:
+        'Tailored settings for Myanmar networks, prioritizing local bank and ISP bypass with strong anti-throttling.',
+    bypassPolicy: BypassPolicy(
+      preset: BypassPolicyPreset.strict,
+      directDomains: <String>[
+        'lan',
+        'local',
+        'kbzbank.com',
+        'kbzpay.com',
+        'cbbank.com.mm',
+        'ayabank.com',
+        'uab.com.mm',
+        'mpt.com.mm',
+        'atom.com.mm',
+        'ooredoo.com.mm',
+        'mytel.com.mm',
+      ],
+      directCidrs: <String>[
+        '103.83.128.0/22', // MPT
+        '103.25.140.0/22', // Atom
+      ],
+      bypassPrivateNetworks: true,
+      remoteDnsAddress: 'https://1.1.1.1/dns-query',
+    ),
+    throttlePolicy: TrafficThrottlePolicy(
+      enableMultiplex: true,
+      multiplexPadding: true,
+      multiplexConnections: 6,
+      enableTcpBrutal: false,
+      tcpFastOpen: true,
+      udpFragment: true,
+      tunMtu: 1360,
+      dnsStrategy: 'prefer_ipv4',
+    ),
+    featureSettings: SingboxFeatureSettings(
+      route: RouteOptions(
+        region: 'MM',
+        blockAdvertisements: true,
+        bypassLan: true,
+        ipv6RouteMode: SingboxIpv6RouteMode.disable,
+      ),
+      dns: DnsOptions(
+        providerPreset: DnsProviderPreset.cloudflare,
+        enableFakeIp: true,
+        timeout: Duration(seconds: 10),
+      ),
+      tlsTricks: TlsTricksOptions(
+        enableTlsFragment: true,
+        enableTlsMixedSniCase: true,
+      ),
+    ),
+    endpointPoolOptions: EndpointPoolOptions(
+      autoFailover: true,
+      rotationStrategy: EndpointRotationStrategy.healthiest,
     ),
   );
 }

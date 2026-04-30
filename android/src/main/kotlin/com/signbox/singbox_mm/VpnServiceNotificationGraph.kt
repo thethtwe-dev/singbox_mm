@@ -40,7 +40,7 @@ internal class VpnServiceNotificationGraph(
             intervalMillis = SignboxLibboxServiceContract.NOTIFICATION_STATS_INTERVAL_MS,
             shouldTick = {
                 VpnNotificationRuntimeCoordinator.shouldKeepLiveTicker(
-                    boxService = runtimeSession.boxService,
+                    commandServer = runtimeSession.commandServer,
                     connectedSinceMillis = trafficMonitor.connectedSinceMillis,
                 )
             },

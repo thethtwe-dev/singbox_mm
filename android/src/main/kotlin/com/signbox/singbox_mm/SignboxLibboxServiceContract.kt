@@ -18,6 +18,7 @@ internal object SignboxLibboxServiceContract {
     const val ACTION_STOP = "com.signbox.singbox_mm.action.STOP"
     const val ACTION_RESTART = "com.signbox.singbox_mm.action.RESTART"
     const val ACTION_STATE_UPDATE = "com.signbox.singbox_mm.action.STATE"
+    const val STATE_BROADCAST_PERMISSION_SUFFIX = ".permission.SIGNBOX_STATE"
     const val EXTRA_CONFIG_PATH = "configPath"
     const val EXTRA_STATE = "state"
     const val EXTRA_ERROR = "error"
@@ -27,6 +28,10 @@ internal object SignboxLibboxServiceContract {
     const val STATE_CONNECTING = "connecting"
     const val STATE_CONNECTED = "connected"
     const val STATE_ERROR = "error"
+
+    fun stateBroadcastPermission(packageName: String): String {
+        return packageName + STATE_BROADCAST_PERMISSION_SUFFIX
+    }
 
     fun readPersistedRuntimeState(context: Context): PersistedRuntimeState? {
         return VpnRuntimeSnapshotStore.read(context)

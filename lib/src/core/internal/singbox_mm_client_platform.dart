@@ -4,7 +4,11 @@ Future<void> _setRawConfigInternal(
   SignboxVpn client,
   Map<String, Object?> config,
 ) async {
-  await client._guard(() => client._platform.setConfig(jsonEncode(config)));
+  final String rawConfigJson = jsonEncode(config);
+  final String validatedConfigJson = await client._guard(
+    () => client._platform.validateConfig(rawConfigJson),
+  );
+  await client._guard(() => client._platform.setConfig(validatedConfigJson));
 }
 
 Future<bool> _requestVpnPermissionInternal(SignboxVpn client) {

@@ -60,6 +60,12 @@ abstract class SignboxVpnPlatform extends PlatformInterface {
     throw UnimplementedError('setConfig() has not been implemented.');
   }
 
+  /// Validates raw sing-box JSON config via the native core and returns
+  /// a normalized config string safe to persist/start.
+  Future<String> validateConfig(String configJson) {
+    throw UnimplementedError('validateConfig() has not been implemented.');
+  }
+
   /// Starts the VPN service.
   Future<void> startVpn() {
     throw UnimplementedError('startVpn() has not been implemented.');

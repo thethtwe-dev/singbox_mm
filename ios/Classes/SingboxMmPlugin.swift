@@ -92,6 +92,8 @@ public class SingboxMmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     case "requestVpnPermission":
       // iOS VPN permission flow must be handled by the host app's Network Extension setup.
       result(true)
+    case "validateConfig":
+      validateConfig(arguments: call.arguments, result: result)
     case "setConfig":
       setConfig(arguments: call.arguments, result: result)
     case "startVpn":
@@ -263,6 +265,45 @@ public class SingboxMmPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         FlutterError(
           code: "CONFIG_WRITE_FAILED",
           message: "Unable to save config: \(error.localizedDescription)",
+          details: nil))
+    }
+  }
+
+  private func validateConfig(arguments: Any?, result: @escaping FlutterResult) {
+    guard let args = arguments as? [String: Any?],
+      let config = args["config"] as? String,
+      !config.isEmpty
+    else {
+      result(
+        FlutterError(
+          code: "INVALID_CONFIG",
+          message: "Missing config payload",
+          details: nil))
+      return
+    }
+
+    do {
+      guard let data = config.data(using: .utf8) else {
+        throw NSError(
+          domain: "singbox_mm",
+          code: -1,
+          userInfo: [NSLocalizedDescriptionKey: "Config must be UTF-8 text"])
+      }
+      let object = try JSONSerialization.jsonObject(with: data, options: [])
+      guard JSONSerialization.isValidJSONObject(object) else {
+        throw NSError(
+          domain: "singbox_mm",
+          code: -2,
+          userInfo: [NSLocalizedDescriptionKey: "Config is not a valid JSON object"])
+      }
+      let normalizedData = try JSONSerialization.data(withJSONObject: object, options: [])
+      let normalized = String(data: normalizedData, encoding: .utf8) ?? config
+      result(normalized)
+    } catch {
+      result(
+        FlutterError(
+          code: "CONFIG_VALIDATE_FAILED",
+          message: "Invalid config JSON: \(error.localizedDescription)",
           details: nil))
     }
   }

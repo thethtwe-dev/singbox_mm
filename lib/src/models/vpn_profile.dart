@@ -112,7 +112,10 @@ class TlsOptions {
   /// Reality short ID.
   final String? realityShortId;
 
-  /// Reality spider path.
+  /// Xray Reality spider path parsed from share links.
+  ///
+  /// sing-box outbound Reality options do not support this field, so it is
+  /// retained on the profile for compatibility but not emitted to JSON.
   final String? realitySpiderX;
 
   /// ALPN list for TLS handshake.
@@ -150,8 +153,6 @@ class TlsOptions {
         'public_key': realityPublicKey,
         if (realityShortId != null && realityShortId!.isNotEmpty)
           'short_id': realityShortId,
-        if (realitySpiderX != null && realitySpiderX!.isNotEmpty)
-          'spider_x': realitySpiderX,
       };
     }
 
@@ -423,6 +424,9 @@ class VpnProfile {
     String? privateKeyPassphrase,
     List<String> hostKey = const <String>[],
     List<String> hostKeyAlgorithms = const <String>[],
+    List<String> ciphers = const <String>[],
+    List<String> macs = const <String>[],
+    List<String> keyExchangeAlgorithms = const <String>[],
     String? clientVersion,
     String? detour,
     Map<String, Object?> extra = const <String, Object?>{},
@@ -433,6 +437,18 @@ class VpnProfile {
         .map((String item) => item.trim())
         .toList(growable: false);
     final List<String> normalizedHostKeyAlgorithms = hostKeyAlgorithms
+        .where((String item) => item.trim().isNotEmpty)
+        .map((String item) => item.trim())
+        .toList(growable: false);
+    final List<String> normalizedCiphers = ciphers
+        .where((String item) => item.trim().isNotEmpty)
+        .map((String item) => item.trim())
+        .toList(growable: false);
+    final List<String> normalizedMacs = macs
+        .where((String item) => item.trim().isNotEmpty)
+        .map((String item) => item.trim())
+        .toList(growable: false);
+    final List<String> normalizedKex = keyExchangeAlgorithms
         .where((String item) => item.trim().isNotEmpty)
         .map((String item) => item.trim())
         .toList(growable: false);
@@ -459,6 +475,12 @@ class VpnProfile {
         'host_key_algorithms': List<String>.unmodifiable(
           normalizedHostKeyAlgorithms,
         ),
+      if (normalizedCiphers.isNotEmpty)
+        'cipher': List<String>.unmodifiable(normalizedCiphers),
+      if (normalizedMacs.isNotEmpty)
+        'mac': List<String>.unmodifiable(normalizedMacs),
+      if (normalizedKex.isNotEmpty)
+        'key_exchange': List<String>.unmodifiable(normalizedKex),
       if (clientVersion != null && clientVersion.isNotEmpty)
         'client_version': clientVersion,
       if (detour != null && detour.isNotEmpty) 'detour': detour,
@@ -623,6 +645,9 @@ class VpnProfile {
         _putIfHasString(extra, outbound, 'private_key_passphrase');
         _putIfHasStringList(extra, outbound, 'host_key');
         _putIfHasStringList(extra, outbound, 'host_key_algorithms');
+        _putIfHasStringList(extra, outbound, 'cipher');
+        _putIfHasStringList(extra, outbound, 'mac');
+        _putIfHasStringList(extra, outbound, 'key_exchange');
         _putIfHasString(extra, outbound, 'client_version');
         _putIfHasString(extra, outbound, 'detour');
 
@@ -754,12 +779,9 @@ class VpnProfile {
           if (headers.isNotEmpty) 'headers': headers,
         };
       case VpnTransport.grpc:
-        final String? authority = _extractGrpcAuthority(websocketHeaders);
         return <String, Object?>{
           'type': 'grpc',
           'service_name': grpcServiceName ?? 'grpc',
-          if (authority case final String resolvedAuthority)
-            'authority': resolvedAuthority,
         };
       case VpnTransport.quic:
         return <String, Object?>{'type': 'quic'};
@@ -783,12 +805,20 @@ class VpnProfile {
       case VpnTransport.httpUpgrade:
         final String path = _normalizeWsTransportPath(websocketPath);
         final String? host = _extractHttpUpgradeHost(websocketHeaders);
+        final Map<String, String> headers = Map<String, String>.from(
+          _normalizeWsHeaders(websocketHeaders),
+        );
+        if (host case final String resolvedHost) {
+          headers['Host'] = resolvedHost;
+          headers.remove('host');
+          headers.remove(':authority');
+          headers.remove('authority');
+        }
         return <String, Object?>{
           'type': 'httpupgrade',
           'path': path,
           if (host case final String resolvedHost) 'host': resolvedHost,
-          if (host case final String resolvedHost)
-            'headers': <String, String>{'Host': resolvedHost},
+          if (headers.isNotEmpty) 'headers': headers,
         };
     }
   }
@@ -866,15 +896,6 @@ class VpnProfile {
         headers[':authority'] ??
         headers['authority'];
     return _normalizeHeaderToken(host);
-  }
-
-  static String? _extractGrpcAuthority(Map<String, String> headers) {
-    final String? authority =
-        headers[':authority'] ??
-        headers['authority'] ??
-        headers['Host'] ??
-        headers['host'];
-    return _normalizeHeaderToken(authority);
   }
 
   static String? _normalizeHeaderToken(String? raw) {

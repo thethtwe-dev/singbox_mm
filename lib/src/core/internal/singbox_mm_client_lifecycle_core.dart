@@ -23,12 +23,15 @@ Map<String, Object?> _buildConfigInternal(
   required BypassPolicy bypassPolicy,
   required TrafficThrottlePolicy throttlePolicy,
   required SingboxFeatureSettings featureSettings,
+  SingboxTransportBuildMode transportBuildMode =
+      SingboxTransportBuildMode.singboxNative,
 }) {
   return client._configBuilder.build(
     profile: profile,
     bypassPolicy: bypassPolicy,
     throttlePolicy: throttlePolicy,
     settings: featureSettings,
+    transportBuildMode: transportBuildMode,
     logLevel: client._runtimeOptions.logLevel,
     tunInterfaceName: client._runtimeOptions.tunInterfaceName,
     tunInet4Address: client._runtimeOptions.tunInet4Address,

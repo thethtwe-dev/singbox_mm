@@ -3,8 +3,18 @@ import 'internal/singbox_inbound_builder.dart';
 import 'internal/singbox_route_rules_builder.dart';
 import '../models/bypass_policy.dart';
 import '../models/singbox_feature_settings.dart';
+import '../models/singbox_rule_set.dart';
 import '../models/traffic_throttle_policy.dart';
 import '../models/vpn_profile.dart';
+
+/// Transport normalization strategy used during config generation.
+enum SingboxTransportBuildMode {
+  /// Prefer official sing-box native transport mapping.
+  singboxNative,
+
+  /// Prefer Xray-compatible legacy transport mapping for problematic links.
+  xrayCompat,
+}
 
 class SingboxConfigBuilder {
   const SingboxConfigBuilder();
@@ -17,12 +27,16 @@ class SingboxConfigBuilder {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
   static const String _transportAliasExtraKey = '_sbmm_transport_alias';
+  static const String _grpcAuthorityExtraKey = '_sbmm_grpc_authority';
+  static const String _grpcModeExtraKey = '_sbmm_grpc_mode';
 
   Map<String, Object?> build({
     required VpnProfile profile,
     BypassPolicy bypassPolicy = const BypassPolicy(),
     TrafficThrottlePolicy throttlePolicy = const TrafficThrottlePolicy(),
     SingboxFeatureSettings settings = const SingboxFeatureSettings(),
+    SingboxTransportBuildMode transportBuildMode =
+        SingboxTransportBuildMode.singboxNative,
     String logLevel = 'info',
     String tunInterfaceName = 'sb-tun',
     String tunInet4Address = '172.19.0.1/30',
@@ -37,14 +51,17 @@ class SingboxConfigBuilder {
     final String normalizedTransportType = _resolveNormalizedTransportType(
       profile: profile,
       outbound: proxyOutbound,
+      transportBuildMode: transportBuildMode,
     );
     _applyEarlyTransportNormalization(
       outbound: proxyOutbound,
       normalizedTransportType: normalizedTransportType,
+      transportBuildMode: transportBuildMode,
     );
     final String postNormalizedTransportType = _resolveNormalizedTransportType(
       profile: profile,
       outbound: proxyOutbound,
+      transportBuildMode: transportBuildMode,
     );
     _enforceVlessMultiplexStability(outbound: proxyOutbound, profile: profile);
     if (forceIpv4Only) {
@@ -61,7 +78,6 @@ class SingboxConfigBuilder {
       proxyOutbound,
       <String, Object?>{'type': 'direct', 'tag': 'direct'},
       <String, Object?>{'type': 'block', 'tag': 'block'},
-      <String, Object?>{'type': 'dns', 'tag': 'dns-out'},
     ];
 
     String finalOutboundTag = profile.tag;
@@ -123,6 +139,10 @@ class SingboxConfigBuilder {
         'override_android_vpn': false,
         'final': finalOutboundTag,
         'rules': routeRules,
+        if (settings.route.ruleSets.isNotEmpty)
+          'rule_set': settings.route.ruleSets
+              .map((SingboxRuleSet e) => e.toMap())
+              .toList(),
       },
       'experimental': experimental,
     };
@@ -131,8 +151,13 @@ class SingboxConfigBuilder {
       _deepMergeMap(config, settings.rawConfigPatch);
     }
 
-    _sanitizeFinalOutbounds(config, profile);
-    _forceHttpUpgradeHttp11Alpn(config);
+    _migrateLegacyDnsRouteRules(config);
+    _sanitizeFinalOutbounds(
+      config,
+      profile,
+      transportBuildMode: transportBuildMode,
+    );
+    _forceHttpUpgradeHttp11Alpn(config, transportBuildMode: transportBuildMode);
 
     return config;
   }
@@ -209,20 +234,38 @@ class SingboxConfigBuilder {
   String _resolveNormalizedTransportType({
     required VpnProfile profile,
     required Map<String, Object?> outbound,
+    required SingboxTransportBuildMode transportBuildMode,
   }) {
+    final String? transportAlias = _readTransportAlias(outbound);
+    if (transportAlias == 'xhttp') {
+      return transportBuildMode == SingboxTransportBuildMode.xrayCompat
+          ? 'httpupgrade'
+          : 'http';
+    }
+    if (transportAlias == 'httpupgrade') {
+      return 'httpupgrade';
+    }
+
     final Map<String, Object?> transport = _asObjectMap(outbound['transport']);
     final String? rawFromOutbound = _normalizedNonEmptyString(
       transport['type'],
     );
     if (rawFromOutbound != null) {
-      return _normalizeTransportTypeValue(rawFromOutbound);
+      return _normalizeTransportTypeValue(
+        rawFromOutbound,
+        transportBuildMode: transportBuildMode,
+      );
     }
-    return _normalizeTransportTypeValue(profile.transport.wireValue);
+    return _normalizeTransportTypeValue(
+      profile.transport.wireValue,
+      transportBuildMode: transportBuildMode,
+    );
   }
 
   void _applyEarlyTransportNormalization({
     required Map<String, Object?> outbound,
     required String normalizedTransportType,
+    required SingboxTransportBuildMode transportBuildMode,
   }) {
     if (normalizedTransportType == 'httpupgrade') {
       final Map<String, Object?> transport = _asObjectMap(
@@ -232,7 +275,7 @@ class SingboxConfigBuilder {
         transport['type'] = 'httpupgrade';
         outbound['transport'] = transport;
       }
-      _normalizeTransportType(outbound);
+      _normalizeTransportType(outbound, transportBuildMode: transportBuildMode);
       _normalizeHttpUpgradeTransport(outbound);
       _applyHttpUpgradeAlpnDefaults(outbound);
       return;
@@ -246,16 +289,28 @@ class SingboxConfigBuilder {
         transport['type'] = 'http';
         outbound['transport'] = transport;
       }
-      _normalizeTransportType(outbound);
+      _normalizeTransportType(outbound, transportBuildMode: transportBuildMode);
       _normalizeHttpTransport(outbound);
       _applyHttpTransportAlpnDefaults(outbound);
+      return;
+    }
+
+    if (normalizedTransportType == 'grpc') {
+      _normalizeGrpcTransport(outbound);
+      _applyGrpcAlpnDefaults(outbound);
     }
   }
 
-  String _normalizeTransportTypeValue(String rawType) {
+  String _normalizeTransportTypeValue(
+    String rawType, {
+    SingboxTransportBuildMode transportBuildMode =
+        SingboxTransportBuildMode.singboxNative,
+  }) {
     final String normalized = rawType.trim().toLowerCase();
     if (normalized == 'xhttp') {
-      return 'http';
+      return transportBuildMode == SingboxTransportBuildMode.xrayCompat
+          ? 'httpupgrade'
+          : 'http';
     }
     if (normalized == 'httpupgrade' || normalized == 'http-upgrade') {
       return 'httpupgrade';
@@ -427,21 +482,29 @@ class SingboxConfigBuilder {
 
   void _sanitizeFinalOutbounds(
     Map<String, Object?> config,
-    VpnProfile profile,
-  ) {
+    VpnProfile profile, {
+    required SingboxTransportBuildMode transportBuildMode,
+  }) {
     final Object? rawOutbounds = config['outbounds'];
     if (rawOutbounds is! List<Object?>) {
       return;
     }
 
-    for (int i = 0; i < rawOutbounds.length; i++) {
+    for (int i = rawOutbounds.length - 1; i >= 0; i--) {
       final Object? item = rawOutbounds[i];
       if (item is! Map<Object?, Object?>) {
         continue;
       }
 
       final Map<String, Object?> outbound = _asObjectMap(item);
-      _normalizeTransportType(outbound);
+      final String type =
+          (outbound['type'] as String?)?.trim().toLowerCase() ?? '';
+      if (type == 'dns') {
+        rawOutbounds.removeAt(i);
+        continue;
+      }
+
+      _normalizeTransportType(outbound, transportBuildMode: transportBuildMode);
       _normalizeHttpUpgradeTransport(outbound);
       _normalizeHttpTransport(outbound);
       _applyHttpUpgradeAlpnDefaults(outbound);
@@ -452,6 +515,7 @@ class SingboxConfigBuilder {
       final bool profileTlsDisabled =
           outbound['tag'] == profile.tag && profile.tls.enabled == false;
       final Map<String, Object?> tls = _asObjectMap(outbound['tls']);
+      _sanitizeTlsReality(tls);
       final bool tlsEnabled = tls['enabled'] == true;
 
       if (profileTlsDisabled || securityNone) {
@@ -463,13 +527,54 @@ class SingboxConfigBuilder {
       } else if (requiresNativeTls && tls.isNotEmpty && !tlsEnabled) {
         // Prevent invalid partially-patched native TLS blocks.
         outbound.remove('tls');
+      } else if (tls.isNotEmpty) {
+        outbound['tls'] = tls;
       }
 
       rawOutbounds[i] = outbound;
     }
   }
 
-  void _normalizeTransportType(Map<String, Object?> outbound) {
+  void _sanitizeTlsReality(Map<String, Object?> tls) {
+    final Map<String, Object?> reality = _asObjectMap(tls['reality']);
+    if (reality.isEmpty) {
+      return;
+    }
+
+    reality.remove('spider_x');
+    tls['reality'] = reality;
+  }
+
+  void _migrateLegacyDnsRouteRules(Map<String, Object?> config) {
+    final Map<String, Object?> route = _asObjectMap(config['route']);
+    final Object? rawRules = route['rules'];
+    if (rawRules is! List<Object?>) {
+      return;
+    }
+
+    for (int i = 0; i < rawRules.length; i++) {
+      final Object? item = rawRules[i];
+      if (item is! Map<Object?, Object?>) {
+        continue;
+      }
+
+      final Map<String, Object?> rule = _asObjectMap(item);
+      final String outbound =
+          (rule['outbound'] as String?)?.trim().toLowerCase() ?? '';
+      if (outbound != 'dns-out') {
+        continue;
+      }
+
+      rule.remove('outbound');
+      rule['action'] = 'hijack-dns';
+      rawRules[i] = rule;
+    }
+  }
+
+  void _normalizeTransportType(
+    Map<String, Object?> outbound, {
+    required SingboxTransportBuildMode transportBuildMode,
+  }) {
     final Map<String, Object?> transport = _asObjectMap(outbound['transport']);
     if (transport.isEmpty) {
       return;
@@ -477,14 +582,21 @@ class SingboxConfigBuilder {
 
     final String rawType =
         (transport['type'] as String?)?.trim().toLowerCase() ?? '';
+    final String? transportAlias = _readTransportAlias(outbound);
+    if (transportAlias == 'xhttp' &&
+        (rawType == 'httpupgrade' || rawType == 'http-upgrade')) {
+      transport['type'] =
+          transportBuildMode == SingboxTransportBuildMode.xrayCompat
+          ? 'httpupgrade'
+          : 'http';
+      outbound['transport'] = transport;
+      return;
+    }
     if (rawType == 'xhttp') {
-      // sing-box does not implement the xray xhttp (splithttp) protocol.
-      // The closest compatible sing-box transport is `httpupgrade`, which
-      // works with the same server endpoints when the server supports both
-      // (e.g. Hiddify exposes httpupgrade and xhttp on the same path).
-      // We remap transparently so the connection succeeds instead of
-      // producing PROTOCOL_ERROR or 400 Bad Request errors.
-      transport['type'] = 'httpupgrade';
+      transport['type'] =
+          transportBuildMode == SingboxTransportBuildMode.xrayCompat
+          ? 'httpupgrade'
+          : 'http';
       outbound['transport'] = transport;
       return;
     }
@@ -576,6 +688,21 @@ class SingboxConfigBuilder {
     headers.remove('host');
     headers.remove(':authority');
     headers.remove('authority');
+    if (xhttpAlias) {
+      bool hasUserAgent = false;
+      for (final Object? key in headers.keys) {
+        if (key is! String) {
+          continue;
+        }
+        if (key.trim().toLowerCase() == 'user-agent') {
+          hasUserAgent = true;
+          break;
+        }
+      }
+      if (!hasUserAgent) {
+        headers['User-Agent'] = _httpUpgradeUserAgent;
+      }
+    }
     if (headers.isEmpty) {
       transport.remove('headers');
     } else {
@@ -604,18 +731,111 @@ class SingboxConfigBuilder {
     outbound['transport'] = transport;
   }
 
+  void _normalizeGrpcTransport(Map<String, Object?> outbound) {
+    final Map<String, Object?> transport = _asObjectMap(outbound['transport']);
+    if (transport.isEmpty) {
+      return;
+    }
+
+    final String transportType =
+        (transport['type'] as String?)?.trim().toLowerCase() ?? '';
+    if (transportType != 'grpc') {
+      return;
+    }
+
+    transport['service_name'] = _normalizeGrpcServiceName(
+      transport['service_name'],
+    );
+
+    final String? mode = _normalizedNonEmptyString(
+      outbound[_grpcModeExtraKey],
+    )?.toLowerCase();
+    if (mode == 'multi') {
+      // Best-effort compatibility with Xray-style grpc "multi" mode.
+      transport['permit_without_stream'] = true;
+    }
+
+    final String? authority = _normalizedNonEmptyString(
+      outbound[_grpcAuthorityExtraKey],
+    );
+    final Map<String, Object?> tls = _asObjectMap(outbound['tls']);
+    final String? tlsServerName = _normalizedNonEmptyString(tls['server_name']);
+    final String? outboundSni = _normalizedNonEmptyString(outbound['sni']);
+    final String? desiredAuthority = _firstNonEmptyString(<String?>[
+      authority,
+      tlsServerName,
+      outboundSni,
+    ]);
+
+    if (desiredAuthority != null && !_looksLikeIpLiteral(desiredAuthority)) {
+      // sing-box gRPC does not expose explicit :authority override.
+      // Align dial host with authority/SNI to mimic Xray behavior and reduce
+      // CDN 403 responses when origin routing depends on :authority.
+      outbound['server'] = desiredAuthority;
+      if (tls.isNotEmpty) {
+        tls['server_name'] = desiredAuthority;
+        outbound['tls'] = tls;
+      }
+    }
+
+    outbound['transport'] = transport;
+  }
+
   String _normalizeXhttpPath(Object? rawPath) {
-    // xray xhttp stream-one mode requires a trailing slash on the path:
-    // POST /yourpath/ → 200 with streaming body.
-    // POST /yourpath  → 404 (server does not redirect without trailing slash).
-    final String base = _normalizeHttpUpgradePath(rawPath);
-    return base.endsWith('/') ? base : '$base/';
+    // Keep xHTTP path stable with a single leading slash only.
+    // Do not force trailing slash because some servers validate exact path.
+    return _normalizeHttpUpgradePath(rawPath);
   }
 
   String _normalizeHttpUpgradePath(Object? rawPath) {
     final String raw = (rawPath as String?)?.trim() ?? '';
     final String body = raw.replaceAll(RegExp(r'^/+'), '');
     return '/$body';
+  }
+
+  String _normalizeGrpcServiceName(Object? rawServiceName) {
+    final String raw = (rawServiceName as String?)?.trim() ?? '';
+    if (raw.isEmpty) {
+      return 'grpc';
+    }
+
+    String normalized = raw.replaceFirst(RegExp(r'^/+'), '');
+    if (normalized.toLowerCase().endsWith('/tun')) {
+      normalized = normalized.substring(0, normalized.length - 4);
+    }
+
+    final List<String> encodedSegments = <String>[];
+    for (final String segment in normalized.split('/')) {
+      final String token = segment.trim();
+      if (token.isEmpty) {
+        continue;
+      }
+      encodedSegments.add(Uri.encodeComponent(token));
+    }
+    if (encodedSegments.isEmpty) {
+      return 'grpc';
+    }
+    return encodedSegments.join('/');
+  }
+
+  bool _looksLikeIpLiteral(String host) {
+    if (host.contains(':')) {
+      return true;
+    }
+    return RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host);
+  }
+
+  String? _firstNonEmptyString(List<String?> values) {
+    for (final String? value in values) {
+      if (value == null) {
+        continue;
+      }
+      final String trimmed = value.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+    return null;
   }
 
   String? _resolveHttpUpgradeHost({
@@ -771,22 +991,46 @@ class SingboxConfigBuilder {
     }
 
     if (xhttpAlias) {
-      // xHTTP uses HTTP/2 framing in sing-box. Always advertise h2 first so
-      // TLS negotiation picks HTTP/2. Listing http/1.1 alone (or first) causes
-      // the server to accept HTTP/1.1 while sing-box sends H2 frames —
-      // producing "http2: frame too large" errors.
-      final List<String> xhttpAlpn = <String>['h2'];
-      if (normalizedAlpn.contains('http/1.1')) {
-        xhttpAlpn.add('http/1.1');
+      // Preserve explicit link ALPN order for xHTTP. Some CDN deployments
+      // require HTTP/1.1-only or custom H2/H3 preference to avoid 400/404.
+      if (normalizedAlpn.isEmpty) {
+        tls['alpn'] = const <String>['h2', 'http/1.1'];
+      } else {
+        tls['alpn'] = normalizedAlpn;
       }
-      tls['alpn'] = xhttpAlpn;
-      // Prevent uTLS presets from reintroducing incompatible ALPN ordering.
+      // Prevent uTLS presets from silently reordering ALPN.
       tls.remove('utls');
     } else if (normalizedAlpn.isEmpty) {
       tls['alpn'] = const <String>['h2', 'http/1.1'];
     } else {
       tls['alpn'] = normalizedAlpn;
     }
+    outbound['tls'] = tls;
+  }
+
+  void _applyGrpcAlpnDefaults(Map<String, Object?> outbound) {
+    final Map<String, Object?> transport = _asObjectMap(outbound['transport']);
+    final String transportType =
+        (transport['type'] as String?)?.trim().toLowerCase() ?? '';
+    if (transportType != 'grpc') {
+      return;
+    }
+    if (_isSecurityNone(outbound)) {
+      return;
+    }
+
+    final Map<String, Object?> tls = _asObjectMap(outbound['tls']);
+    final bool shouldAssumeTls =
+        tls.isNotEmpty ||
+        _isTlsSecurityEnabled(outbound) ||
+        _isHttpsPort(outbound);
+    if (!shouldAssumeTls) {
+      return;
+    }
+
+    tls['enabled'] = true;
+    // gRPC over v2ray transport must negotiate HTTP/2.
+    tls['alpn'] = const <String>['h2'];
     outbound['tls'] = tls;
   }
 
@@ -879,7 +1123,10 @@ class SingboxConfigBuilder {
     return false;
   }
 
-  void _forceHttpUpgradeHttp11Alpn(Map<String, Object?> config) {
+  void _forceHttpUpgradeHttp11Alpn(
+    Map<String, Object?> config, {
+    required SingboxTransportBuildMode transportBuildMode,
+  }) {
     final Object? rawOutbounds = config['outbounds'];
     if (rawOutbounds is! List<Object?>) {
       return;
@@ -892,12 +1139,16 @@ class SingboxConfigBuilder {
       }
 
       final Map<String, Object?> outbound = _asObjectMap(item);
-      _normalizeTransportType(outbound);
+      _normalizeTransportType(outbound, transportBuildMode: transportBuildMode);
       _normalizeHttpUpgradeTransport(outbound);
       _normalizeHttpTransport(outbound);
+      _normalizeGrpcTransport(outbound);
       _applyHttpUpgradeAlpnDefaults(outbound);
       _applyHttpTransportAlpnDefaults(outbound);
+      _applyGrpcAlpnDefaults(outbound);
       outbound.remove(_transportAliasExtraKey);
+      outbound.remove(_grpcAuthorityExtraKey);
+      outbound.remove(_grpcModeExtraKey);
       rawOutbounds[i] = outbound;
     }
   }

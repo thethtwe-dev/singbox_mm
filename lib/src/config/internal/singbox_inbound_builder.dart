@@ -9,9 +9,6 @@ class SingboxInboundBuilder {
     required String tunInet4Address,
   }) {
     final List<Object?> inbounds = <Object?>[];
-    final bool sniff = settings.route.resolveDestination;
-    const bool tunSniff = true;
-    const bool tunSniffOverrideDestination = true;
     final bool shareLan = settings.inbound.shareVpnInLocalNetwork;
 
     if (settings.inbound.serviceMode == SingboxServiceMode.vpn) {
@@ -28,13 +25,11 @@ class SingboxInboundBuilder {
         'type': 'tun',
         'tag': 'tun-in',
         'interface_name': tunInterfaceName,
-        'inet4_address': tunInet4Address,
+        'address': <String>[tunInet4Address],
         'auto_route': true,
-        'strict_route': true,
+        'strict_route': settings.inbound.strictRoute,
         'stack': _toTunStack(settings.inbound.tunImplementation),
         'mtu': 1100,
-        'sniff': tunSniff,
-        'sniff_override_destination': tunSniffOverrideDestination,
       };
       if (splitTunnelingEnabled && includePackages.isNotEmpty) {
         tunInbound['include_package'] = includePackages;
@@ -54,7 +49,6 @@ class SingboxInboundBuilder {
         'tag': 'mixed-in',
         'listen': shareLan ? '0.0.0.0' : '127.0.0.1',
         'listen_port': mixedPort ?? 10808,
-        'sniff': sniff,
       });
     }
 
@@ -65,7 +59,6 @@ class SingboxInboundBuilder {
         'tag': 'redirect-in',
         'listen': shareLan ? '0.0.0.0' : '127.0.0.1',
         'listen_port': transparentProxyPort,
-        'sniff': sniff,
       });
     }
 

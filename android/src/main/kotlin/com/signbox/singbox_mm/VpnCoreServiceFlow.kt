@@ -2,7 +2,6 @@ package com.signbox.singbox_mm
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
-import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.PlatformInterface
@@ -70,7 +69,6 @@ internal object VpnCoreStartFlow {
 }
 
 internal data class VpnCoreStopRequest(
-    val boxService: BoxService?,
     val commandServer: CommandServer?,
     val tunFileDescriptor: ParcelFileDescriptor?,
     val trafficMonitor: NotificationTrafficMonitor,
@@ -82,7 +80,6 @@ internal data class VpnCoreStopRequest(
 internal object VpnCoreStopFlow {
     fun execute(request: VpnCoreStopRequest) {
         VpnCoreSessionOrchestrator.stopRuntimeAndTraffic(
-            boxService = request.boxService,
             commandServer = request.commandServer,
             tunFileDescriptor = request.tunFileDescriptor,
             trafficMonitor = request.trafficMonitor,

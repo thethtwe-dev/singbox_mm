@@ -16,49 +16,86 @@ _ParseOutput _parseVmessConfig(
   final Uri uri = parser._parseUri(raw, expectedScheme: 'vmess');
   parser._assertAddress(uri, scheme: 'vmess');
 
-  final Map<String, String> query = parser._normalizeQuery(uri);
+  final Map<String, String> query = parser.applyDownloadSettingsOverrides(
+    parser._normalizeQuery(uri),
+  );
+  final _ResolvedEndpoint endpoint = parser._resolveEndpoint(
+    uri,
+    query,
+    scheme: 'vmess',
+  );
   final List<String> warnings = <String>[];
   final String? rawTransport = VpnConfigParser._firstValue(
     query,
     const <String>['type', 'net'],
   );
-  final VpnTransport transport = parser._parseTransport(
+  final VpnTransport parsedTransport = parser._parseTransport(
     rawTransport,
     warnings: warnings,
   );
+  final bool promoteHttpUpgrade = parser._shouldPromoteHttpUpgradeToXhttp(
+    rawTransport: rawTransport,
+    query: query,
+  );
+  final VpnTransport transport = promoteHttpUpgrade
+      ? VpnTransport.http
+      : parsedTransport;
+  if (promoteHttpUpgrade) {
+    warnings.add(
+      'Detected xhttp-style profile; promoted httpupgrade to sing-box http transport.',
+    );
+  }
 
-  final String? wsHost = parser._extractWsHost(query);
+  final Map<String, String> transportHeaders = parser._extractTransportHeaders(
+    query,
+  );
+  final String? wsHost = VpnConfigParser._firstNonEmpty(<String?>[
+    transportHeaders['Host'],
+    parser._extractWsHost(query),
+  ]);
   final String uuid = VpnConfigParser._requireNonEmpty(
     Uri.decodeComponent(uri.userInfo),
     'vmess uuid',
   );
 
   final Map<String, Object?> extra = parser._buildVmessExtra(query);
-  parser._attachTransportAlias(extra, rawTransport);
+  parser._attachTransportAlias(
+    extra,
+    rawTransport,
+    forceAlias: promoteHttpUpgrade ? 'xhttp' : null,
+  );
 
   final VpnProfile profile = VpnProfile.vmess(
     tag: parser._resolveTag(uri, fallbackTag: fallbackTag, scheme: 'vmess'),
-    server: uri.host,
-    serverPort: uri.port,
+    server: endpoint.host,
+    serverPort: endpoint.port,
     uuid: uuid,
     transport: transport,
     websocketPath: parser._extractWsPath(query),
-    websocketHeaders: wsHost == null
-        ? const <String, String>{}
-        : <String, String>{'Host': wsHost},
+    websocketHeaders: transportHeaders,
     grpcServiceName: parser._extractGrpcServiceName(query),
     maxEarlyData: parser._extractWsMaxEarlyData(query),
     earlyDataHeaderName: parser._extractWsEarlyDataHeaderName(query),
     tls: parser._buildTlsOptions(
       query,
-      fallbackServerName: wsHost ?? uri.host,
+      fallbackServerName: wsHost ?? endpoint.host,
       defaultEnabled: false,
-      defaultAlpn:
-          transport == VpnTransport.ws || transport == VpnTransport.httpUpgrade
-          ? const <String>['http/1.1']
-          : const <String>['h2', 'http/1.1'],
+      defaultAlpn: parser._defaultAlpnForTransport(transport),
     ),
     extra: extra,
+  );
+
+  VpnConfigParser._collectUnknownFields(
+    query,
+    knownKeys: const <String>{
+      'type', 'net', 'security', 'sni', 'fp', 'pbk', 'sid', 'spx', 'flow',
+      'path', 'host', 'serviceName', 'mode', 'extra', 'alpn', 'allowInsecure',
+      'headerType', 'quicSecurity', 'key', 'seed', 'header', 'uTLS',
+      'downloadsettings', 'download_settings', 'core', 'packet_encoding',
+      'packetencoding', 'packetaddr', 'packet-addr', 'packet_addr',
+      'xhttpmode', 'xhttp_mode', 'aid', 'alterid',
+    },
+    warnings: warnings,
   );
 
   return _ParseOutput(profile, warnings: warnings);
@@ -119,7 +156,8 @@ _ParseOutput? _tryParseVmessJsonConfig(
     return null;
   }
 
-  final Map<String, String> query = <String, String>{
+  final Map<String, String>
+  query = parser.applyDownloadSettingsOverrides(<String, String>{
     if (VpnConfigParser._stringFromMap(vmessMap, const <String>['security']) !=
         null)
       'security': VpnConfigParser._stringFromMap(vmessMap, const <String>[
@@ -202,24 +240,48 @@ _ParseOutput? _tryParseVmessJsonConfig(
       )!,
     if (VpnConfigParser._stringFromMap(vmessMap, const <String>['eh']) != null)
       'eh': VpnConfigParser._stringFromMap(vmessMap, const <String>['eh'])!,
-  };
+  });
 
   final List<String> warnings = <String>[];
   final String? rawTransport = VpnConfigParser._stringFromMap(
     vmessMap,
     const <String>['net', 'type'],
   );
-  final VpnTransport transport = parser._parseTransport(
+  final VpnTransport parsedTransport = parser._parseTransport(
     rawTransport,
     warnings: warnings,
   );
+  final bool promoteHttpUpgrade = parser._shouldPromoteHttpUpgradeToXhttp(
+    rawTransport: rawTransport,
+    query: query,
+  );
+  final VpnTransport transport = promoteHttpUpgrade
+      ? VpnTransport.http
+      : parsedTransport;
+  if (promoteHttpUpgrade) {
+    warnings.add(
+      'Detected xhttp-style profile; promoted httpupgrade to sing-box http transport.',
+    );
+  }
 
-  final String? wsHost = parser._extractWsHost(query);
+  final Map<String, String> transportHeaders = parser._extractTransportHeaders(
+    query,
+  );
+  final _ResolvedEndpoint endpoint = parser._resolveEndpointFromBase(
+    host,
+    port,
+    query,
+    scheme: 'vmess',
+  );
+  final String? wsHost = VpnConfigParser._firstNonEmpty(<String?>[
+    transportHeaders['Host'],
+    parser._extractWsHost(query),
+  ]);
   final String vmessTag = parser._buildTag(
     explicitTag: VpnConfigParser._stringFromMap(vmessMap, const <String>['ps']),
     fallbackTag: fallbackTag,
     scheme: 'vmess',
-    host: host,
+    host: endpoint.host,
   );
 
   final Map<String, Object?> extra = parser._buildVmessExtra(
@@ -230,29 +292,28 @@ _ParseOutput? _tryParseVmessJsonConfig(
       'cipher',
     ]),
   );
-  parser._attachTransportAlias(extra, rawTransport);
+  parser._attachTransportAlias(
+    extra,
+    rawTransport,
+    forceAlias: promoteHttpUpgrade ? 'xhttp' : null,
+  );
 
   final VpnProfile profile = VpnProfile.vmess(
     tag: vmessTag,
-    server: host,
-    serverPort: port,
+    server: endpoint.host,
+    serverPort: endpoint.port,
     uuid: uuid,
     transport: transport,
     websocketPath: parser._extractWsPath(query),
-    websocketHeaders: wsHost == null
-        ? const <String, String>{}
-        : <String, String>{'Host': wsHost},
+    websocketHeaders: transportHeaders,
     grpcServiceName: parser._extractGrpcServiceName(query),
     maxEarlyData: parser._extractWsMaxEarlyData(query),
     earlyDataHeaderName: parser._extractWsEarlyDataHeaderName(query),
     tls: parser._buildTlsOptions(
       query,
-      fallbackServerName: wsHost ?? host,
+      fallbackServerName: wsHost ?? endpoint.host,
       defaultEnabled: false,
-      defaultAlpn:
-          transport == VpnTransport.ws || transport == VpnTransport.httpUpgrade
-          ? const <String>['http/1.1']
-          : const <String>['h2', 'http/1.1'],
+      defaultAlpn: parser._defaultAlpnForTransport(transport),
     ),
     extra: extra,
   );

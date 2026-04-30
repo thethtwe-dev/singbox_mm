@@ -61,6 +61,11 @@ class _ManagedFakePlatform
   }
 
   @override
+  Future<String> validateConfig(String configJson) async {
+    return configJson;
+  }
+
+  @override
   Future<void> startVpn() async {
     startCalls++;
     started = true;

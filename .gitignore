@@ -1,6 +1,7 @@
 # Miscellaneous
 *.class
 *.log
+cfgs.txt
 *.pyc
 *.swp
 .DS_Store
@@ -31,3 +32,4 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
+android/gradle/

@@ -82,6 +82,21 @@ _ParseOutput _parseSshConfig(
     query,
     const <String>['hostkeyalgorithms', 'host_key_algorithms'],
   );
+  final List<String> ciphers = _collectQueryListValues(
+    uri,
+    query,
+    const <String>['cipher', 'ciphers'],
+  );
+  final List<String> macs = _collectQueryListValues(
+    uri,
+    query,
+    const <String>['mac', 'macs'],
+  );
+  final List<String> keyExchangeAlgorithms = _collectQueryListValues(
+    uri,
+    query,
+    const <String>['key_exchange', 'kex'],
+  );
 
   final int serverPort;
   if (uri.hasPort) {
@@ -114,6 +129,9 @@ _ParseOutput _parseSshConfig(
     privateKeyPassphrase: privateKeyPassphrase,
     hostKey: hostKey,
     hostKeyAlgorithms: hostKeyAlgorithms,
+    ciphers: ciphers,
+    macs: macs,
+    keyExchangeAlgorithms: keyExchangeAlgorithms,
     clientVersion: VpnConfigParser._firstValue(query, const <String>[
       'clientversion',
       'client_version',

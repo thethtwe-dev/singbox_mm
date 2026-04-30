@@ -78,6 +78,7 @@ internal class PluginCoordinatorFactory(
         runtimeConfigStore: PluginRuntimeConfigStore,
     ): PluginConfigOperations {
         return PluginConfigOperations(
+            context = args.context,
             executor = args.executor,
             runtimeConfigStore = runtimeConfigStore,
             postSuccess = args.postSuccess,

@@ -1,7 +1,6 @@
 package com.signbox.singbox_mm
 
 import android.os.ParcelFileDescriptor
-import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.PlatformInterface
@@ -45,7 +44,10 @@ internal object VpnCoreSessionOrchestrator {
             commandPort = commandPort,
         )
         onConnecting()
-        VpnCoreLifecycleCoordinator.startRuntimeService(runtime.boxService)
+        VpnCoreLifecycleCoordinator.startRuntimeService(
+            runtime.commandServer,
+            preparedConfig.configContent
+        )
         return VpnCoreStartOutcome(
             preparedConfig = preparedConfig,
             runtime = runtime,
@@ -53,7 +55,6 @@ internal object VpnCoreSessionOrchestrator {
     }
 
     fun stopRuntimeAndTraffic(
-        boxService: BoxService?,
         commandServer: CommandServer?,
         tunFileDescriptor: ParcelFileDescriptor?,
         trafficMonitor: NotificationTrafficMonitor,
@@ -62,7 +63,6 @@ internal object VpnCoreSessionOrchestrator {
         persistSnapshot: (String, String?) -> Unit,
     ) {
         VpnCoreLifecycleCoordinator.stopRuntime(
-            boxService = boxService,
             commandServer = commandServer,
             tunFileDescriptor = tunFileDescriptor,
         )

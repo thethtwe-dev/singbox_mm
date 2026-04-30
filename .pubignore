@@ -20,6 +20,8 @@ example/test_driver/
 example/assets/singbox/
 android/gradle/
 
-# Keep pub.dev package under extracted-size limit by excluding emulator ABIs.
+# Keep pub.dev package under the expanded archive limit. Full ABI artifacts can
+# be regenerated with tool/fetch_singbox_libbox_android.sh in a local checkout.
+android/src/main/jniLibs/armeabi-v7a/
 android/src/main/jniLibs/x86/
 android/src/main/jniLibs/x86_64/

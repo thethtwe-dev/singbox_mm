@@ -20,6 +20,9 @@
 - **Android hardening:** constrain runtime config writes to app-private storage,
   write configs atomically, protect state broadcasts on older Android, and honor
   TLS/SNI options in native ping checks.
+- **Package size:** publish only `arm64-v8a` native artifacts to satisfy
+  pub.dev's expanded archive limit; local checkouts can regenerate additional
+  ABIs with `tool/fetch_singbox_libbox_android.sh`.
 - **Tests:** updated preset expectations for the Myanmar preset and added
   regression coverage for sing-box 1.13 config output.
 

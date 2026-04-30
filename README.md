@@ -582,16 +582,15 @@ print('Active: ${result.appliedProfile?.tag}');
 
 Large release APK size is expected when shipping all native ABIs because each ABI includes its own `libbox.so`.
 
-For pub.dev distribution, this package includes mobile ABIs only:
+For pub.dev distribution, this package includes one native ABI to stay under pub.dev's expanded archive limit:
 - `arm64-v8a`
-- `armeabi-v7a`
 
-Emulator ABIs (`x86`, `x86_64`) are excluded from the published tarball to stay under pub.dev extracted-size limits. If you need emulator ABI support, use a local/forked copy and include those JNI libs.
+32-bit and emulator ABIs (`armeabi-v7a`, `x86`, `x86_64`) are excluded from the published tarball. If you need those ABIs, use a local/forked checkout and run `./tool/fetch_singbox_libbox_android.sh` to regenerate/include them before building.
 
 Recommended distribution strategy:
 - Play Store: build `AAB` (`flutter build appbundle`) so users receive only their device ABI split.
 - Direct APK distribution: build per-ABI artifacts (`flutter build apk --release --split-per-abi`).
-- If your distribution never targets emulators, you can exclude `x86`/`x86_64` ABIs in the host app release config.
+- If your distribution targets 32-bit or emulator devices, include the corresponding regenerated ABI artifacts in a local app build.
 
 ### Android 16 KB Page-Size Support
 
